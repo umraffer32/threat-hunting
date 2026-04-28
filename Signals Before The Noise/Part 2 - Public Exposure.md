@@ -45,3 +45,7 @@
 **Flag:** `D`
 
 > **Lesson:** Pick the telemetry source that matches the *layer* of activity you're hunting. Authentication telemetry tells you who got in; process telemetry tells you what they ran; file telemetry tells you what they wrote. But none of those answer "did anyone knock on the door?" That question lives in network telemetry, and specifically in the records of inbound connection attempts. When the hypothesis is "exposure was discovered," the network table is always the first stop — successful auth and post-exploitation activity only matter once you've confirmed someone was looking.
+
+---
+
+[⬆ Back to Table of Contents](./README.md#table-of-contents)
