@@ -210,3 +210,11 @@ Result: **United States** and **Uruguay**. Two countries authenticated successfu
 > One of those two is almost certainly legitimate. PHTG is a US company, the exposed VM lives in East US 2, and Sarah Chen — the cloud engineer who posted the LinkedIn photo — is a US-based employee. Successful auths from US IPs are the expected baseline. The other one — **Uruguay** — has no business reason to authenticate against a US-based PHTG workstation. That's the prime suspect for the actual compromise, and every subsequent question in this hunt should be filtered through "what did the Uruguay IP do."
 >
 > The detection-engineering takeaway: when triaging RDP-exposed assets, the alert that matters isn't "many failed logins" (you'll get those from internet noise no matter what). It's **"first-ever successful auth from a country that has never previously authenticated."** That single signal would have caught this in real time — and it's a one-line analytics rule on `DeviceLogonEvents` joined to a country-baseline table. Cheap to build, high signal, and as this lab shows, it pinpoints the suspect without any other context.
+
+# PRACTICEHunt 03 — Q17 — Successful Countries
+
+**Goal:** Identify the countries associated with successful RDP authentication events.
+
+**Approach:** Already surfaced by the Q16 query, which used `make_set(country_name)` alongside the `dcount` to capture the country names directly. The set returned `["Uruguay", "United States"]`.
+
+**Flag:** `United States, Uruguay`
