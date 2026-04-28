@@ -184,3 +184,35 @@ The question hinged on which rename "turns the file into a Windows executable." 
 **Approach:** Already available from the Q25 / Q26 rename chain query — adding `SHA256` to the projection list surfaces the hash alongside the filename. The hash is consistent across every rename event for the file because the underlying bytes never change; only the name does.
 
 **Flag:** `224462ce5e3304e3fd0875eeabc829810a894911e3d4091d4e60e67a2687e695`
+
+# PRACTICEHunt 03 — Q28 — Final File Name
+
+**Goal:** Track the payload file forward through rename events using its SHA256 hash, and identify the final observed filename tied to that hash.
+
+**Approach:** The payload's filename had already changed multiple times in the Q25 rename chain ending at `Sarah_Chen_Notes.exe`. The instinct was to submit that — but the question explicitly says *"track the file forward through rename events"*, which means following the *hash*, not the name. Hashes survive renames; names don't. Pulling every event tied to the SHA256 across a wider time window surfaces moves that the original name-based query missed.
+
+```kql
+DeviceFileEvents
+| where TimeGenerated between (datetime(2025-12-12 13:30:00) .. datetime(2025-12-13 23:59:59))
+| where DeviceName == "azwks-phtg-02"
+| where SHA256 == "224462ce5e3304e3fd0875eeabc829810a894911e3d4091d4e60e67a2687e695"
+| project TimeGenerated, ActionType, FileName, PreviousFileName, FolderPath
+| order by TimeGenerated asc
+```
+
+The full chain extended well beyond what the previous queries showed:
+
+<img width="1281" height="307" alt="image" src="https://github.com/user-attachments/assets/f9ebc5c6-4722-437e-beb9-3b71ba172298" />
+<br>
+
+The attacker moved the payload out of Sarah's user profile and into `C:\ProgramData\PHTG\HealthCloud\` — the **legitimate HealthCloud service directory** explicitly mentioned in the hunt briefing as containing "scheduled PowerShell tasks, background service executables, diagnostic cache directories." Then renamed `Sarah_Chen_Notes.exe` to `PHTG.exe` — disguising the payload as a HealthCloud component to blend with trusted binaries already living in that directory.
+
+**Flag:** `PHTG.exe`
+
+> **Lesson:** This is the question that makes the case for hash-based pivoting over name-based pivoting in any post-compromise investigation. The Q25/Q26 rename chain stopped at `Sarah_Chen_Notes.exe` because the name-based query happened to fall outside the window where the file got moved and renamed again. Pivoting on `SHA256 == "<hash>"` instead of `FileName has "Sarah_Chen_Notes"` followed the *file*, not the *label*, and surfaced two more events on the next day — including the move into the legitimate HealthCloud service directory and the final rename to a benign-looking `PHTG.exe`. Names are an attacker's prerogative; hashes are physics.
+>
+> The blending tradecraft is what makes this dangerous. The hunt briefing tells us `C:\ProgramData\PHTG\HealthCloud\` is supposed to contain legitimate PHTG service binaries. Most EDR allowlists, AV exclusions, and endpoint baselines will treat that directory as trusted — exactly because it's the documented home of an internal service. By dropping a renamed payload into that directory, the attacker is pre-positioning the malware where future detections are *least* likely to fire, and where any sysadmin glancing at running processes will see "PHTG.exe in C:\ProgramData\PHTG\HealthCloud\" and dismiss it as legitimate.
+>
+> The detection-engineering implication: any new file dropped into a documented service directory by a user account (rather than the service installer or the service itself) is high-signal. A simple analytic — `DeviceFileEvents | where FolderPath has "C:\\ProgramData\\PHTG" and InitiatingProcessAccountName != "system" and ActionType in ("FileCreated", "FileRenamed")` — catches this pattern in one query. The exclusion that makes it work is `system`: the legitimate service installer and the service itself run as SYSTEM. A user account writing into a service directory is an immediate anomaly.
+>
+> The cleanup pattern reflexively reinforces the same lesson — for incident response, *always* establish the SHA256 of any suspicious file early and use it as the pivot key for the rest of the investigation. Filenames, paths, and parent processes are reliable until they aren't. Hashes don't lie.
