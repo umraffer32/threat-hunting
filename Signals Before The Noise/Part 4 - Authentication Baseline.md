@@ -175,3 +175,38 @@ DeviceLogonEvents
 > 1. **Different attacker populations leave evidence at different layers.** Q09 (network) captured scanners that completed a TCP handshake; Q15 (auth) captures everyone who tried to log in. The auth set will overlap with but not equal the network set, because some auth attempts never produce the specific `ConnectionAttempt` + `InboundConnectionAccepted` pair Q09 was filtering on, and because authenticated traffic patterns vary across MDE event classification.
 >
 > 2. **The geographic spread tells you the threat profile.** Eleven countries was already broad enough to call this "global botnet noise"; 17 confirms it. This isn't a targeted actor probing from a small set of operator nodes — this is mass credential brute-force from compromised infrastructure scattered across continents. That distinction matters for response: targeted attackers warrant deep forensic investigation; opportunistic mass scanning warrants exposure reduction (close the port, geofence, require VPN) over per-IP attribution.
+
+# PRACTICEHunt 03 — Q16 — Countries with Successful Auth
+
+**Goal:** Of the 17 countries with RDP-related auth events, count how many had at least one successful authentication.
+
+**Approach:** Same shape as Q15, with one extra filter — `ActionType == "LogonSuccess"` — applied before the distinct + geo-enrich. Adding `make_set(country_name)` alongside `dcount` to surface the actual country names, not just the count.
+
+```kql
+let GeoTable =
+    externaldata(network:string, geoname_id:long, continent_code:string,
+                 continent_name:string, country_iso_code:string, country_name:string)
+    [@"https://raw.githubusercontent.com/datasets/geoip2-ipv4/main/data/geoip2-ipv4.csv"]
+    with (format="csv");
+DeviceLogonEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where RemoteIPType == "Public"
+| where LogonType in ("Network", "RemoteInteractive")
+| where ActionType == "LogonSuccess"
+| distinct RemoteIP
+| evaluate ipv4_lookup(GeoTable, RemoteIP, network)
+| summarize Countries = make_set(country_name), DistinctCountries = dcount(country_name)
+```
+
+<img width="638" height="182" alt="image" src="https://github.com/user-attachments/assets/e664e20d-b647-47a7-9e04-aba2a4401029" />
+
+Result: **United States** and **Uruguay**. Two countries authenticated successfully out of the seventeen that tried.
+
+**Flag:** `2`
+
+> **Lesson:** This is the question where the funnel collapses and the suspect surfaces. Seventeen countries attempted auth; two got through. The success rate (2/17 = 12% of countries, or — counted by IP — far less, since most countries had multiple failing IPs) is the cue that brute force largely *didn't* work. But the two that did succeed are now the entire investigation.
+>
+> One of those two is almost certainly legitimate. PHTG is a US company, the exposed VM lives in East US 2, and Sarah Chen — the cloud engineer who posted the LinkedIn photo — is a US-based employee. Successful auths from US IPs are the expected baseline. The other one — **Uruguay** — has no business reason to authenticate against a US-based PHTG workstation. That's the prime suspect for the actual compromise, and every subsequent question in this hunt should be filtered through "what did the Uruguay IP do."
+>
+> The detection-engineering takeaway: when triaging RDP-exposed assets, the alert that matters isn't "many failed logins" (you'll get those from internet noise no matter what). It's **"first-ever successful auth from a country that has never previously authenticated."** That single signal would have caught this in real time — and it's a one-line analytics rule on `DeviceLogonEvents` joined to a country-baseline table. Cheap to build, high signal, and as this lab shows, it pinpoints the suspect without any other context.
