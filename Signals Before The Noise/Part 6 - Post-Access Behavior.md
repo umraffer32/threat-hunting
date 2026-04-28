@@ -176,3 +176,11 @@ The question hinged on which rename "turns the file into a Windows executable." 
 **Approach:** Already in the Q25 rename chain. Between `Sarah_Chen_Notes.Txt` and the final `Sarah_Chen_Notes.exe`, the operator briefly renamed the file to `Sarah_Chen_Notes.exe.Txt` at 2:14:02 PM. Windows treats the file as a text file (because `.Txt` is the actual final extension) but the filename visually contains `.exe`, exploiting the default "hide known file extensions" Explorer setting to disguise the staged executable.
 
 **Flag:** `Sarah_Chen_Notes.exe.Txt`
+
+# PRACTICEHunt 03 — Q27 — File SHA256
+
+**Goal:** Capture the SHA256 hash of the payload file.
+
+**Approach:** Already available from the Q25 / Q26 rename chain query — adding `SHA256` to the projection list surfaces the hash alongside the filename. The hash is consistent across every rename event for the file because the underlying bytes never change; only the name does.
+
+**Flag:** `224462ce5e3304e3fd0875eeabc829810a894911e3d4091d4e60e67a2687e695`
