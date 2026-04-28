@@ -135,3 +135,37 @@ The naming reasoning becomes obvious in retrospect:
 > The detection-engineering takeaway: when telemetry shows an attacker accessing files on a compromised admin's box, weight files in this order for "what was potentially leaked": (1) personal notes / scratchpad files in the user's profile, (2) browser saved-passwords / cookies, (3) SSH keys / .azure / .aws config dirs, (4) project documentation. Most defenders prioritize (4) because it sounds important; attackers go for (1) because it's actually useful. The naming pattern matters too — files named after the user (`notes_sarah.txt`, `creds.txt`, `passwords.docx`) or the user's role (`mypasswords.xlsx`) are higher-priority alerts when accessed by anomalous processes than generic project documentation files.
 >
 > The process lesson layered in: when reasoning about ambiguous content questions, the available follow-up activity (the SharePoint/AAD URLs in this case) is a tempting signal but can be misleading. The operator could browse SharePoint and Azure AD docs because they read about them in *any* of the four files — or for general orientation reasons unrelated to those files at all. Process telemetry showed the actions but not which file *caused* which action. The naming convention of the files themselves was actually a stronger signal than the post-hoc URL pattern, and the hint had to bring me back to that.
+
+# PRACTICEHunt 03 — Q25 — First Executable Form
+
+**Goal:** Identify the first renamed filename where the extension turns the file into a Windows executable.
+
+**Approach:** The question references "the payload file" — context that hadn't been established yet, so the first move was to find every `FileRenamed` event during the operator session and look for a chain where a single file's extension evolves over time. Classic attacker tradecraft: download a payload with an innocuous extension to bypass any "no .exe downloads" gate, then progressively rename it.
+
+```kql
+DeviceFileEvents
+| where TimeGenerated between (datetime(2025-12-12 13:30:00) .. datetime(2025-12-12 23:00:00))
+| where DeviceName == "azwks-phtg-02"
+| where ActionType == "FileRenamed"
+| where InitiatingProcessAccountName == "vmadminusername"
+| project TimeGenerated, ActionType, FileName, PreviousFileName, FolderPath, InitiatingProcessFileName
+| order by TimeGenerated asc
+```
+
+The result surfaced a clean rename chain on a file named `Sarah_Chen_Notes`:
+
+<img width="1363" height="304" alt="image" src="https://github.com/user-attachments/assets/a9480080-c8d2-4f11-90fe-fd841ce57226" />
+
+
+The progression tells the full story: Edge finalized a download as `.Txt` (the `.crdownload` suffix is the in-progress download marker browsers use), the operator renamed it manually in Explorer to add `.exe.Txt` as a sneaky double-extension form, then renamed it again to drop the `.Txt` entirely — leaving `Sarah_Chen_Notes.exe` as the final executable form.
+
+The question hinged on which rename "turns the file into a Windows executable." Windows reads only the *final* extension when deciding how to handle a file. `Sarah_Chen_Notes.exe.Txt` looks like it has `.exe` in the name, but Windows treats it as a text file because `.Txt` is the actual extension. Only the final rename to `Sarah_Chen_Notes.exe` makes the file double-clickable as a PE executable.
+
+**Flag:** `Sarah_Chen_Notes.exe`
+
+> **Lesson:** Double-extension renaming is a classic payload-staging trick that defeats both lazy security controls and lazy users. The pattern is reliable enough to detect on directly: any `FileRenamed` event where `PreviousFileName` ends in a benign extension and `FileName` ends in a Windows executable extension (`.exe`, `.dll`, `.bat`, `.cmd`, `.ps1`, `.scr`, `.vbs`, `.js`, `.hta`, etc.) is high-signal. Add a parent-process filter for `explorer.exe` to catch hands-on-keyboard renaming specifically — automated processes don't usually rename files this way.
+>
+> The `.crdownload` suffix is the artifact that lets you pivot from a renamed file back to the originating browser download. Browsers (Chrome, Edge, Brave, Opera) all use `.crdownload` while a download is in progress and rename to the final filename on completion. So a `FileRenamed` event with `PreviousFileName` ending in `.crdownload` and `InitiatingProcessFileName` set to a browser is the **download finalization** — the canonical "this file just arrived from the internet" event. Pair that with the subsequent rename chain and you have the entire payload-arrival sequence captured in three or four telemetry rows.
+>
+> The double-extension form (`Sarah_Chen_Notes.exe.Txt`) is also a Windows-specific user-interface attack — by default, Windows Explorer hides "known file extensions," meaning a user sees `Sarah_Chen_Notes.exe` displayed for a file actually named `Sarah_Chen_Notes.exe.Txt`. Combined with a custom icon, this is how attackers trick users into thinking a `.exe` is a `.txt`. The defensive response is the same as it's been for 20 years: turn on "show file extensions" in every user's Explorer, every time. Most orgs still don't.
+
