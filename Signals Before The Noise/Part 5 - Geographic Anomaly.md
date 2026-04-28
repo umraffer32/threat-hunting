@@ -67,3 +67,40 @@ DeviceLogonEvents
 ```
 
 **Flag:** `23`
+
+# PRACTICEHunt 03 — Q21 — First RemoteIP from Uruguay
+
+**Goal:** Identify the RemoteIP associated with the first successful RDP authentication from the unexpected country.
+
+**Approach:** Already in the Q19 dataset. Sorted ascending by `TimeGenerated`, the first row is `12/12/2025, 5:47:45 AM` from `173.244.55.131` (Network logon).
+
+```kql
+let GeoTable =
+    externaldata(network:string, geoname_id:long, continent_code:string,
+                 continent_name:string, country_iso_code:string, country_name:string)
+    [@"https://raw.githubusercontent.com/datasets/geoip2-ipv4/main/data/geoip2-ipv4.csv"]
+    with (format="csv");
+DeviceLogonEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where RemoteIPType == "Public"
+| where LogonType in ("Network", "RemoteInteractive")
+| where ActionType == "LogonSuccess"
+| evaluate ipv4_lookup(GeoTable, RemoteIP, network)
+| where country_name == "Uruguay"
+| project TimeGenerated, AccountName, RemoteIP, LogonType
+| order by TimeGenerated asc
+| take 1
+```
+
+**Flag:** `173.244.55.131`
+
+> **Lesson:** The two-IP pattern is a behavioral fingerprint worth recognizing. `173.244.55.131` shows up once — the *initial successful credential discovery* — and then `173.244.55.128` takes over for the next ~8 hours of session activity. That's the classic operator pattern: one IP burns through the brute-force list until it finds working credentials, then the operator pivots to a clean IP (often a different VPS in the same hosting provider's range) for actual hands-on-keyboard work. The `.128`/`.131` adjacency suggests both IPs come from the same /24, likely the same VPS provider — common for cheap bulletproof hosting. From a detection standpoint: any successful auth from an IP that is preceded by failed auths from a *neighboring* IP in the same /24 is worth alerting on, because that's the brute-force-then-pivot signature.
+
+# PRACTICEHunt 03 — Q22 — Second RemoteIP from Uruguay
+
+**Goal:** Identify the second RemoteIP associated with successful authentication events from the unexpected country.
+
+**Approach:** Already surfaced by the Q19 result. Two distinct Uruguay IPs appeared: `173.244.55.131` (Q21, first hit) and `173.244.55.128` (the remaining 22 successful auths).
+
+**Flag:** `173.244.55.128`
