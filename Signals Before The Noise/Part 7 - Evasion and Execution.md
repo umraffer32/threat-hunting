@@ -34,3 +34,34 @@ The `ReportSource` value in the raw telemetry rendered as `Windows Defender Anti
 > The detection-engineering implication is exactly the inverse of the defensive lesson: **monitor for Defender operating-state transitions as a high-priority alert.** Any event where `ReportSource` changes from `active` to `passive` (or where `Set-MpPreference` is invoked from PowerShell, or where the registry keys under `HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\` get modified) should fire immediately. By the time AV stops detecting things, the attacker is already in.
 >
 > Two more layered observations: (1) The transition happened *after* three successful quarantines in seven minutes — meaning the operator saw their first three drops fail, then escalated to disabling AV before redropping. That's a tell about operator skill (they understood what was killing the payload and knew where to apply pressure). (2) The detections continued to fire in passive mode — Defender kept *seeing* the threat, it just couldn't act on it. That's actually a gift to defenders: even when AV is disarmed, the telemetry flow doesn't stop. Hunting `AntivirusDetectionActionType` events with `ReportSource` containing "passive mode" surfaces every host where AV is currently disarmed, regardless of whether the attacker ever gets caught any other way. That's a one-line query for a fleet-wide health check on Defender posture.
+
+# PRACTICEHunt 03 — Q31 — First Execution
+
+**Goal:** Identify the filename the payload ran under during its first execution phase.
+
+**Approach:** Pivot from file telemetry to process telemetry, filtering on the SHA256 hash from Q27 to track execution events independently of whatever filename was active at the time. Sort chronologically and look for the phase break that the question hints at.
+
+```kql
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where SHA256 == "224462ce5e3304e3fd0875eeabc829810a894911e3d4091d4e60e67a2687e695"
+| project TimeGenerated, FileName, ProcessCommandLine, FolderPath, InitiatingProcessFileName, InitiatingProcessAccountName
+| order by TimeGenerated asc
+```
+
+<img width="1437" height="250" alt="image" src="https://github.com/user-attachments/assets/4cf3c13b-0b04-4c9e-82d9-878c7eddf825" />
+<br>
+
+The result split cleanly into two phases:
+
+| Phase | Time Range | FileName | Path | Parent |
+|---|---|---|---|---|
+| **Phase 1** | 12/12 2:18 PM – 12/13 10:13 AM | `Sarah_Chen_Notes.exe` | `C:\Users\vmAdminUsername\Documents\PHTG\` | `explorer.exe` |
+| Phase 2 | 12/13 10:21 AM onward | `PHTG.exe` | `C:\ProgramData\PHTG\HealthCloud\` | `cmd.exe` |
+
+Phase 1 is operator-driven manual execution — `explorer.exe` as parent means the operator double-clicked the file four separate times across roughly 20 hours. Phase 2 is scripted execution from a different location with `cmd.exe` as parent, consistent with persistence-driven launches. The phase break aligns exactly with the rename and relocation event from Q28 (`Sarah_Chen_Notes.exe` → `PHTG.exe` at 10:16 AM on 12/13).
+
+**Flag:** `Sarah_Chen_Notes.exe`
+
+> **Lesson:** The two-phase execution pattern — manual `explorer.exe`-spawned execution followed by scripted `cmd.exe`-spawned execution from a different path — is the signature of an attacker transitioning from hands-on-keyboard validation to persistence. Phase 1 is the operator confirming the payload runs and behaves correctly under their direct control. Phase 2 is the payload being launched by whatever persistence mechanism the operator installed once they were satisfied (scheduled task, service, registry Run key, Startup folder shortcut — all of which spawn child processes through `cmd.exe`, `svchost.exe`, or the persistence mechanism's own loader). The parent-process change combined with the path change is a stronger signal than either alone: same hash, different parent, different folder = persistence handoff. Detection rules that track execution counts of a given hash across distinct parent processes catch this transition reliably, and the phase break itself is often the cleanest forensic anchor for "when did this stop being a manual intrusion and start being persistent malware?"
