@@ -73,3 +73,55 @@ Phase 1 is operator-driven manual execution — `explorer.exe` as parent means t
 **Approach:** Already surfaced by the Q31 result. Phase 1 (manual operator execution as `Sarah_Chen_Notes.exe`) was launched by `explorer.exe`. Phase 2 (scripted execution as `PHTG.exe` from `C:\ProgramData\PHTG\HealthCloud\`) was launched by `cmd.exe` — the parent-process shift that signaled the transition from hands-on-keyboard to persistence-driven execution.
 
 **Flag:** `cmd.exe`
+
+# PRACTICEHunt 03 — Q33 — Batch File Wrapper
+
+**Goal:** From the Phase 2 `cmd.exe` command line, extract the full path of the `.bat` file that ran the payload.
+
+**Approach:** The hint pointed at the format `cmd.exe /c <something>` — meaning the batch path is the argument after `/c`. Filter `DeviceProcessEvents` to `cmd.exe` invocations during the Phase 2 window with `.bat` in the command line.
+
+```kql
+DeviceProcessEvents
+| where TimeGenerated between (datetime(2025-12-13 10:21:00) .. datetime(2025-12-13 11:00:00))
+| where DeviceName == "azwks-phtg-02"
+| where FileName == "cmd.exe"
+| where ProcessCommandLine has ".bat"
+| project TimeGenerated, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessAccountName
+| order by TimeGenerated asc
+```
+
+<img width="1098" height="139" alt="image" src="https://github.com/user-attachments/assets/5178c444-2c01-4817-8e8f-bf8cb5b67483" />
+<br>
+
+Two matching rows came back — both with command line `cmd.exe /c "C:\ProgramData\PHTG\HealthCloud\Launch.bat"`, both spawned by `explorer.exe` under `vmadminusername`. The batch file lives in the same `HealthCloud` directory as the renamed `PHTG.exe` payload — identical blending strategy, both files dropped into the legitimate service path to inherit whatever trust the directory has.
+
+**Flag:** `C:\ProgramData\PHTG\HealthCloud\Launch.bat`
+
+> **Lesson:** Wrapping a payload in a `.bat` file launched via `cmd.exe /c` is a small but deliberate evasion choice. Direct execution of `PHTG.exe` would log a process tree of `explorer.exe → PHTG.exe` — a clean parent-child relationship pointing straight at the payload. Wrapping in a batch file produces `explorer.exe → cmd.exe → PHTG.exe`, which (a) breaks the visual signal that "the user ran the .exe directly" because the immediate parent is now a benign Windows shell, (b) lets the attacker stage prep commands (env vars, working directory changes, log redirection) before the payload fires without leaving them as separate process events, and (c) defeats simplistic "alert on direct execution from `C:\ProgramData\` by user account" rules because the user is technically launching `cmd.exe`, not the suspicious binary. The detection lift is the same as Q28's lesson: pivot on the *hash*, not the parent. Any `.exe` running from a service directory under a user account context is suspicious regardless of whether `cmd.exe` is in the chain. And the `.bat` itself is now a high-value forensic artifact — its contents will reveal whether the operator built additional staging logic (network calls, env setup, sleep/loop patterns) on top of just running the payload.
+
+# PRACTICEHunt 03 — Q34 — C2 IP
+
+**Goal:** Identify the external IP the compromised device attempted to communicate with after the payload executed.
+
+**Approach:** Pivot back to `DeviceNetworkEvents`, but filter on `InitiatingProcessSHA256` rather than process name — the payload ran under two different filenames across the two phases (`Sarah_Chen_Notes.exe` and `PHTG.exe`), but the SHA256 is constant. Restrict to public destinations only to drop internal noise.
+
+```kql
+DeviceNetworkEvents
+| where TimeGenerated between (datetime(2025-12-12 14:18:00) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where InitiatingProcessSHA256 == "224462ce5e3304e3fd0875eeabc829810a894911e3d4091d4e60e67a2687e695"
+| where RemoteIPType == "Public"
+| project TimeGenerated, ActionType, RemoteIP, RemotePort, InitiatingProcessFileName
+| order by TimeGenerated asc
+```
+
+<img width="1009" height="166" alt="image" src="https://github.com/user-attachments/assets/471c36e1-05ec-4e72-8b30-bb5806977a56" />
+<br>
+
+Three rows came back — one for each of the three execution attempts (Phase 1: 12/12 2:19 PM, Phase 1 retry: 12/13 10:13 AM, Phase 2: 12/13 10:22 AM). All three pointed at the same destination: **`173.244.55.130:4444`**, all logged as `ConnectionFailed`.
+
+The signal density on this single result is high. The C2 IP `173.244.55.130` lives in the same `173.244.55.0/24` as the brute-force and successful-auth IPs from Phase 04 (`173.244.55.128` and `173.244.55.131`) — the auth infrastructure and the C2 infrastructure are *neighbors*, almost certainly hosted on the same VPS provider under the same operator account. Port `4444` is the default Metasploit Meterpreter handler port, which corroborates the Q29 detection (`Trojan:Win32/Meterpreter`) — default tooling, default port, no operator effort spent on opsec. The `ConnectionFailed` action type on every attempt means the C2 server wasn't reachable when the payload called home — either the listener wasn't running, the operator had taken it down, or upstream egress controls blocked the connection.
+
+**Flag:** `173.244.55.130`
+
+> **Lesson:** This is the question where the entire kill chain stitches together into one narrative: the same /24 that hosted the brute-force traffic, the successful auth, and now the C2 callback. That kind of cross-phase IP correlation is the gold standard for attribution within a single incident — it ties auth-layer evidence to network-layer evidence to process-layer evidence and lets you say *"this is one operator, this is one piece of infrastructure, this is one attack."* The detection-engineering takeaway is to monitor for any internal host beaconing to a /24 that recently appeared in successful-auth telemetry — if a brand-new external network range authenticates against your environment and that same range later appears as an outbound C2 destination, that's the same actor on both ends, not two unrelated events. Port `4444` is also a free signal: any outbound connection to `4444/tcp` from a workstation should fire, since legitimate enterprise software almost never uses that port and any commodity offensive framework using its default settings does. The combination of "outbound to recent-auth /24 + commodity C2 port + executable in `C:\ProgramData\<service>\`" is a near-zero-false-positive analytic that catches the entire pattern in one rule.
