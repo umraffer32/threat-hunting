@@ -216,3 +216,41 @@ The attacker moved the payload out of Sarah's user profile and into `C:\ProgramD
 > The detection-engineering implication: any new file dropped into a documented service directory by a user account (rather than the service installer or the service itself) is high-signal. A simple analytic — `DeviceFileEvents | where FolderPath has "C:\\ProgramData\\PHTG" and InitiatingProcessAccountName != "system" and ActionType in ("FileCreated", "FileRenamed")` — catches this pattern in one query. The exclusion that makes it work is `system`: the legitimate service installer and the service itself run as SYSTEM. A user account writing into a service directory is an immediate anomaly.
 >
 > The cleanup pattern reflexively reinforces the same lesson — for incident response, *always* establish the SHA256 of any suspicious file early and use it as the pivot key for the rest of the investigation. Filenames, paths, and parent processes are reliable until they aren't. Hashes don't lie.
+
+# PRACTICEHunt 03 — Q29 — File Classification
+
+**Goal:** Identify the malware family that Microsoft Defender classifies the payload under, according to MDE telemetry on the device.
+
+**Approach:** This is the `DeviceEvents` table (the MISC table from the briefing schema) — where MDE logs its own AV detections, with the threat name embedded in the `AdditionalFields` JSON blob. Pivoting on the SHA256 from Q27:
+
+```kql
+DeviceEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where SHA256 == "224462ce5e3304e3fd0875eeabc829810a894911e3d4091d4e60e67a2687e695"
+| project TimeGenerated, ActionType, SHA256, AdditionalFields
+| order by TimeGenerated asc
+```
+<img width="1558" height="117" alt="image" src="https://github.com/user-attachments/assets/b74900fd-b104-41e9-b0aa-b65576aaddcf" />
+<br>
+
+The result returned a clean detection chain — Defender flagged the file repeatedly across the rename progression, with `ThreatName` values like:
+
+- `Trojan:Win32/Meterpreter.RPZ!MTB`
+- `Trojan:Win32/Meterpreter.gen!E`
+
+### The trap — picking the wrong field
+
+The first instinct was to submit `Trojan` — it's the most prominent word in the threat name, and "trojan" sounds like the right answer to "what malware family is this?" But Microsoft's threat-name format is structured: `<Type>:<Platform>/<Family>.<Variant>!<Modifier>`. Mapping that against `Trojan:Win32/Meterpreter.RPZ!MTB`:
+
+- **Type:** Trojan (the broad behavior class — generic across thousands of families)
+- **Platform:** Win32
+- **Family:** **Meterpreter** ← this is the answer
+- **Variant:** RPZ
+- **Modifier:** MTB (Multi-Threat Behavior — Defender's heuristic-engine signal)
+
+Trojan is the *category*; Meterpreter is the actual *family*. The question asks for the family.
+
+**Flag:** `Meterpreter`
+
+> **Lesson:** Microsoft threat names follow a strict structure that rewards careful parsing: the family — the part most useful for attribution and threat-intel pivoting — sits between the platform slash and the variant dot. Submitting the type ("Trojan") would be like answering "what model car?" with "sedan." Right shape, wrong specificity.
