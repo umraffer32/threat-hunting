@@ -97,3 +97,79 @@ DeviceNetworkEvents
 > The deeper lesson: in chained-question hunts, treat each prior query's filter set as a contract that propagates forward unless the new question explicitly relaxes it. The numbers in Q06 are not just data points — they're the population being narrowed. If your next answer is a *subset* of the previous answer's population, the filter chain has to extend, not reset.
 >
 > One quirk worth remembering: in `DeviceNetworkEvents`, MDE leaves `RemoteIPType` unset (blank) on `ConnectionAttempt` events. Any positive filter on that column (`== "Public"`, `== "Private"`) silently drops those rows. That behavior was the difference between 325 and 194 here — and it's the kind of gotcha that turns a confident query into a wrong answer if you don't run a `summarize by` to see what your filter is actually scoping out.
+
+# PRACTICEHunt 03 — Q08 — Source Diversity
+
+**Goal:** Count the unique public source IP addresses that targeted the exposed RDP service.
+
+**Approach:** Q06's diagnostic already exposed the answer in the `UniqueSourceIPs` column — but after Q07's filter-chain trap, it was worth confirming the question's scope before submitting. Q08 spells out every constraint explicitly: *unique* (distinct count), *public source IP* (the public filter), *targeted the exposed service* (port 3389). No inherited scope, no interpretive wiggle room. The query is Q06's filter chain with `count()` swapped for `dcount(RemoteIP)`:
+
+```kql
+DeviceNetworkEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where RemoteIPType == "Public"
+| where LocalPort == 3389
+| summarize UniqueSourceIPs = dcount(RemoteIP)
+```
+
+<img width="188" height="109" alt="image" src="https://github.com/user-attachments/assets/dc92c521-3fbe-49d9-8dd9-468d851eb5d4" />
+
+
+A sanity check that included `RemotePort == 3389` events returned the same number — the 39 outbound-flavored events on port 3389 didn't introduce any new public IPs, so the answer is stable across both readings.
+
+**Flag:** `173`
+
+> **Lesson:** A diagnostic groupby earlier in an investigation often answers later questions for free. The `UniqueSourceIPs = dcount(RemoteIP)` column was added to the Q06 query for a reason — distinct-source cardinality is the canonical scanning anomaly metric — and once it surfaced 173 on the 3389 row, that number was committed for any later question about scanner diversity. The discipline worth practicing is *projecting more columns than you currently need* during early hunt queries: `count()`, `dcount(RemoteIP)`, `min()`/`max()` of timestamps, distinct action types. None of them cost meaningfully more, and the same dataframe ends up answering 3–4 downstream questions without re-querying. The cost of a too-narrow first query is having to re-scope and re-run when the next question lands; the cost of a wider one is one extra column on screen.
+
+# PRACTICEHunt 03 — Q09 — Connection Outcomes
+
+**Goal:** Count source IPs that show both a connection attempt and an accepted connection against the exposed RDP service — sources that received an actual TCP response, a different threat class than raw probes.
+
+**Approach:** This is a "set membership" question — for each source IP, did its set of action types contain *both* values? The KQL pattern is `make_set(ActionType) by RemoteIP`, then filter for sources whose set length is >1 within the restricted action types. Q07's filter-chain lesson came up here too: the `RemoteIPType == "Public"` filter from prior queries had to be dropped, because `ConnectionAttempt` events have a blank `RemoteIPType` in MDE — keeping the public filter would silently drop every attempt and break the join logic. Scoping on `LocalPort == 3389` is enough to anchor to the right service.
+
+```kql
+DeviceNetworkEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where LocalPort == 3389
+| where ActionType in ("ConnectionAttempt", "InboundConnectionAccepted")
+| summarize Outcomes = make_set(ActionType) by RemoteIP
+| where array_length(Outcomes) > 1
+| count
+```
+
+<img width="497" height="107" alt="image" src="https://github.com/user-attachments/assets/04e35af1-f188-4ae8-a3e5-4a5f96f80517" />
+
+
+That returned **57**. After Q07, every count felt like it could be hiding a trick, so before submitting it was worth running a diagnostic version to see the public/private split and confirm the count was stable across reasonable interpretations:
+
+```kql
+DeviceNetworkEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where LocalPort == 3389
+| where ActionType in ("ConnectionAttempt", "InboundConnectionAccepted")
+| summarize 
+    Outcomes = make_set(ActionType),
+    Attempts = countif(ActionType == "ConnectionAttempt"),
+    Accepts = countif(ActionType == "InboundConnectionAccepted"),
+    RemoteIPType = take_any(RemoteIPType)
+    by RemoteIP
+| where Attempts > 0 and Accepts > 0
+| summarize 
+    TotalSources = count(),
+    PublicSources = countif(RemoteIPType == "Public" or isempty(RemoteIPType)),
+    PrivateSources = countif(RemoteIPType == "Private")
+```
+
+<img width="557" height="122" alt="image" src="https://github.com/user-attachments/assets/4cf7baa5-efbf-46c8-a4d4-f66f8d49e44a" />
+
+
+Result: 57 total = 53 public + 4 private. Two candidates were now in play — **57** (literal read) or **53** (carry forward Q08's public-only scope). The decisive factor was that Q08 spelled out "public source IP" explicitly and Q09 said only "source IPs." The omission was deliberate.
+
+**Flag:** `57`
+
+> **Lesson:** Two outcomes against the same target on the same port aren't just two events — they're a behavioral pivot. A pure `ConnectionAttempt` is a scanner firing one packet and moving on. An `InboundConnectionAccepted` after an attempt means the source got a TCP handshake, which is what enables credential brute-forcing, banner grabbing, or vulnerability fingerprinting. Sources that show both have *engaged* with the service, not just observed that it exists. In real-world hunting, this set — sources that completed a handshake — is where you focus next: filter the auth telemetry to *just these IPs* and you've collapsed your investigation surface from "every public scanner on the internet" to "the subset that actually tried to talk to the service."
+>
+> The technical lesson layered underneath: when chaining filters across questions, the right scope to carry forward is the one the *current* question explicitly demands, not the one the *previous* question implied. Q07 burned us for stripping a filter the question expected to inherit. Q09 would have burned us for the opposite mistake — inheriting a filter the question didn't demand. Read each question's text against the schema, not against the last query. Q08 said "public source IP." Q09 said "source IPs." Different questions, different scopes.
