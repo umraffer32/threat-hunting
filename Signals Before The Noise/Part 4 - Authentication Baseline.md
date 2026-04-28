@@ -101,3 +101,77 @@ DeviceLogonEvents
 >
 > The process lesson is just as important: when a confident-feeling answer is wrong and the next-best guess is around 70%, paying for the explicit hint is cheaper than burning a third attempt. Two attempts at 100% confidence each beats three attempts at 70% — both in points and in not training yourself to guess. The 15-point hint here cost less than a third question would have, and it eliminated all interpretive ambiguity instead of just narrowing it.
 
+# PRACTICEHunt 03 — Q13 — Dominant Auth Outcome
+
+**Goal:** Identify the most frequent authentication outcome for RDP-related logon activity.
+
+**Approach:** Already in the Q12 dataset. Of the 675 RDP-related auth events (Network + RemoteInteractive, public source), 646 were `LogonFailed` and 29 were `LogonSuccess` — failures dominate by a 22:1 ratio.
+
+```kql
+DeviceLogonEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where RemoteIPType == "Public"
+| where LogonType in ("Network", "RemoteInteractive")
+| summarize Count = count() by ActionType
+| order by Count desc
+```
+
+<img width="484" height="157" alt="image" src="https://github.com/user-attachments/assets/88e57311-b1fb-4419-a66e-5746541e318a" />
+
+**Flag:** `LogonFailed`
+
+# PRACTICEHunt 03 — Q14 — Dominant Failure Reason
+
+**Goal:** Identify the most common failure reason recorded for RDP-related authentication attempts.
+
+**Approach:** Filter to failed RDP auths from Q13 and group by `FailureReason`.
+
+```kql
+DeviceLogonEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where RemoteIPType == "Public"
+| where LogonType in ("Network", "RemoteInteractive")
+| where ActionType == "LogonFailed"
+| summarize Count = count() by FailureReason
+| order by Count desc
+```
+
+<img width="580" height="139" alt="image" src="https://github.com/user-attachments/assets/8be5e6ba-6ed9-4d8f-bfa0-f1262538ec99" />
+
+
+
+**Flag:** `InvalidUserNameOrPassword`
+
+# PRACTICEHunt 03 — Q15 — Countries from Auth Activity
+
+**Goal:** Count the unique countries associated with RDP-related authentication events on the device.
+
+**Approach:** Same geo enrichment pattern as Q10, but pivoting from `DeviceNetworkEvents` to `DeviceLogonEvents`. Take the distinct public source IPs from RDP-related auth events (Network + RemoteInteractive), enrich with the GeoTable, and `dcount` the country names.
+
+```kql
+let GeoTable =
+    externaldata(network:string, geoname_id:long, continent_code:string,
+                 continent_name:string, country_iso_code:string, country_name:string)
+    [@"https://raw.githubusercontent.com/datasets/geoip2-ipv4/main/data/geoip2-ipv4.csv"]
+    with (format="csv");
+DeviceLogonEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where RemoteIPType == "Public"
+| where LogonType in ("Network", "RemoteInteractive")
+| distinct RemoteIP
+| evaluate ipv4_lookup(GeoTable, RemoteIP, network)
+| summarize DistinctCountries = dcount(country_name)
+```
+
+<img width="665" height="151" alt="image" src="https://github.com/user-attachments/assets/a9b06fd7-9167-4422-80e9-480daec54aaf" />
+
+**Flag:** `17`
+
+> **Lesson:** 17 countries on the auth table vs 11 on the network table is a meaningful delta. The auth-side population is *larger*, not smaller — meaning some IPs went straight to credential attempts without showing up in the Q09 "completed handshake" set. Two readings worth holding:
+>
+> 1. **Different attacker populations leave evidence at different layers.** Q09 (network) captured scanners that completed a TCP handshake; Q15 (auth) captures everyone who tried to log in. The auth set will overlap with but not equal the network set, because some auth attempts never produce the specific `ConnectionAttempt` + `InboundConnectionAccepted` pair Q09 was filtering on, and because authenticated traffic patterns vary across MDE event classification.
+>
+> 2. **The geographic spread tells you the threat profile.** Eleven countries was already broad enough to call this "global botnet noise"; 17 confirms it. This isn't a targeted actor probing from a small set of operator nodes — this is mass credential brute-force from compromised infrastructure scattered across continents. That distinction matters for response: targeted attackers warrant deep forensic investigation; opportunistic mass scanning warrants exposure reduction (close the port, geofence, require VPN) over per-IP attribution.
