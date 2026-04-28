@@ -1,4 +1,6 @@
-# PRACTICEHunt 03 — Signals Before The Noise
+<img width="1096" height="159" alt="image" src="https://github.com/user-attachments/assets/dd58e53d-2ee6-491f-b08a-897301fa86ed" />
+<br>
+
 
 > **External RDP Compromise · PHTG · December 2025**
 > A proactive OSINT-driven threat hunt across 5 MDE tables, reconstructing the full kill chain from a leaked LinkedIn photo to in-memory C2.
