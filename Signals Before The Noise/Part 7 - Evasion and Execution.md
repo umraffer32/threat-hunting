@@ -125,3 +125,40 @@ The signal density on this single result is high. The C2 IP `173.244.55.130` liv
 **Flag:** `173.244.55.130`
 
 > **Lesson:** This is the question where the entire kill chain stitches together into one narrative: the same /24 that hosted the brute-force traffic, the successful auth, and now the C2 callback. That kind of cross-phase IP correlation is the gold standard for attribution within a single incident — it ties auth-layer evidence to network-layer evidence to process-layer evidence and lets you say *"this is one operator, this is one piece of infrastructure, this is one attack."* The detection-engineering takeaway is to monitor for any internal host beaconing to a /24 that recently appeared in successful-auth telemetry — if a brand-new external network range authenticates against your environment and that same range later appears as an outbound C2 destination, that's the same actor on both ends, not two unrelated events. Port `4444` is also a free signal: any outbound connection to `4444/tcp` from a workstation should fire, since legitimate enterprise software almost never uses that port and any commodity offensive framework using its default settings does. The combination of "outbound to recent-auth /24 + commodity C2 port + executable in `C:\ProgramData\<service>\`" is a near-zero-false-positive analytic that catches the entire pattern in one rule.
+
+# PRACTICEHunt 03 — Q35 — C2 Geography
+
+**Goal:** Identify the country and continent of the C2 infrastructure.
+
+**Approach:** Geo-enrich the C2 IP from Q34 against the same GeoTable used throughout the hunt. Since the IP was a single value, no need to pivot through `DeviceNetworkEvents` — just feed it directly into `ipv4_lookup`.
+
+```kql
+let GeoTable =
+    externaldata(network:string, geoname_id:long, continent_code:string,
+                 continent_name:string, country_iso_code:string, country_name:string)
+    [@"https://raw.githubusercontent.com/datasets/geoip2-ipv4/main/data/geoip2-ipv4.csv"]
+    with (format="csv");
+print RemoteIP = "173.244.55.130"
+| evaluate ipv4_lookup(GeoTable, RemoteIP, network)
+| project RemoteIP, country_name, continent_name
+```
+
+<img width="527" height="127" alt="image" src="https://github.com/user-attachments/assets/f9ebe5ed-540f-44eb-84d8-aa8f6868c47b" />
+<br>
+
+Result: **Uruguay, South America** — same country as the successful auth IPs (`173.244.55.128` and `173.244.55.131`), same /24, same continent. The full kill chain — credential brute-force, successful auth, payload C2 — all originates from a single contiguous block of Uruguayan infrastructure.
+
+**Flag:** `Uruguay, South America`
+
+> **Lesson:** Geographic confirmation across phases closes the attribution loop. When the brute-force IP, the successful-auth IP, and the C2 IP all geo-resolve to the same country *and* live in the same /24, the case for "single operator, single infrastructure rental, single coordinated attack" is essentially airtight. From a detection standpoint, this kind of cross-phase consistency is the difference between a noisy alert chain and a high-confidence incident: any one phase in isolation could be coincidence (random scanner, random C2 destination, random successful auth), but three phases tied to one /24 cannot be coincidental. Building incident-correlation rules that bucket events by source-IP /24 and look for activity spanning multiple kill-chain phases (auth + network + process telemetry) catches sophisticated actors who rotate individual IPs but reuse the same hosting infrastructure across an operation.
+
+# PRACTICEHunt 03 — Q36 — C2 Remote Port
+
+**Goal:** Identify the remote port the post-execution payload used for C2 callback.
+
+**Approach:** Already surfaced in the Q34 result. All three connection attempts from the payload (across both execution phases) targeted `173.244.55.130` on port **4444** — the default Metasploit Meterpreter handler port, consistent with the `Trojan:Win32/Meterpreter` family classification from Q29.
+
+**Flag:** `4444`
+
+> **Lesson:** Default-port C2 is a free detection win for defenders. Port 4444 is the default Metasploit Meterpreter listener; 5555 is the default for some Cobalt Strike configurations; 8080 is overloaded but commonly seen with commodity frameworks. None of these ports have legitimate enterprise outbound use cases on workstations — alerting on any outbound connection from a non-server host to a public IP on these ports catches commodity offensive tooling at near-zero false-positive cost. The fact that this operator left the Meterpreter handler on the default port (and didn't even bother with HTTPS-style port reuse on 443) is consistent with the rest of their tradecraft: brute-forced default admin account, default Metasploit payload, default port. The operator was efficient, not careful.
+
