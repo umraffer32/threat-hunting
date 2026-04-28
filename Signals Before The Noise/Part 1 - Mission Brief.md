@@ -11,3 +11,7 @@ Phase 01 of the *Signals Before The Noise* investigation. A PHTG cloud engineer 
 **Approach:** Read the briefing. The Proactive Hunt Brief lists `TARGET COMPANY: PHTG`, and the abbreviation appears throughout the context (HealthCloud rollout, `C:\ProgramData\PHTG\HealthCloud\` directory paths).
 
 **Flag:** `PHTG`
+
+---
+
+[⬆ Back to Table of Contents](./README.md#table-of-contents)
