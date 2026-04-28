@@ -42,3 +42,28 @@ DeviceLogonEvents
 > **Lesson:** `vmadminusername` is the kind of account name that should never reach production. It reads like a leftover placeholder from a provisioning script or template — the local admin slot was filled but never properly named. From an attacker's perspective, it's a gift: any credential-stuffing list aimed at Windows hosts cycles through the obvious default admin names (`administrator`, `admin`, `vmadmin`, `vm-admin`, `vmadminuser`, etc.) before moving on to per-organization guesses. A non-renamed default account on a public-facing RDP host is functionally a username giveaway.
 >
 > Two takeaways for detection and hardening: first, audit local admin account names across the fleet — anything matching common defaults or placeholder patterns gets flagged. Second, treat *any* successful auth on a default-named admin account as high-severity, regardless of source — those accounts are supposed to be rotated out of existence post-provisioning, so a successful logon is itself the anomaly.
+
+# PRACTICEHunt 03 — Q20 — Uruguay Success Count
+
+**Goal:** Count the successful RDP authentication events originating from the unexpected country.
+
+**Approach:** Already surfaced by the Q19 query — the result pane showed 23 rows in the Uruguay-filtered set. A `count` instead of `project` returns the number directly.
+
+```kql
+let GeoTable =
+    externaldata(network:string, geoname_id:long, continent_code:string,
+                 continent_name:string, country_iso_code:string, country_name:string)
+    [@"https://raw.githubusercontent.com/datasets/geoip2-ipv4/main/data/geoip2-ipv4.csv"]
+    with (format="csv");
+DeviceLogonEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where RemoteIPType == "Public"
+| where LogonType in ("Network", "RemoteInteractive")
+| where ActionType == "LogonSuccess"
+| evaluate ipv4_lookup(GeoTable, RemoteIP, network)
+| where country_name == "Uruguay"
+| count
+```
+
+**Flag:** `23`
