@@ -65,3 +65,11 @@ Phase 1 is operator-driven manual execution — `explorer.exe` as parent means t
 **Flag:** `Sarah_Chen_Notes.exe`
 
 > **Lesson:** The two-phase execution pattern — manual `explorer.exe`-spawned execution followed by scripted `cmd.exe`-spawned execution from a different path — is the signature of an attacker transitioning from hands-on-keyboard validation to persistence. Phase 1 is the operator confirming the payload runs and behaves correctly under their direct control. Phase 2 is the payload being launched by whatever persistence mechanism the operator installed once they were satisfied (scheduled task, service, registry Run key, Startup folder shortcut — all of which spawn child processes through `cmd.exe`, `svchost.exe`, or the persistence mechanism's own loader). The parent-process change combined with the path change is a stronger signal than either alone: same hash, different parent, different folder = persistence handoff. Detection rules that track execution counts of a given hash across distinct parent processes catch this transition reliably, and the phase break itself is often the cleanest forensic anchor for "when did this stop being a manual intrusion and start being persistent malware?"
+
+# PRACTICEHunt 03 — Q32 — Parent Process
+
+**Goal:** Identify the parent process that launched the payload during the later execution phase.
+
+**Approach:** Already surfaced by the Q31 result. Phase 1 (manual operator execution as `Sarah_Chen_Notes.exe`) was launched by `explorer.exe`. Phase 2 (scripted execution as `PHTG.exe` from `C:\ProgramData\PHTG\HealthCloud\`) was launched by `cmd.exe` — the parent-process shift that signaled the transition from hands-on-keyboard to persistence-driven execution.
+
+**Flag:** `cmd.exe`
