@@ -169,3 +169,10 @@ The question hinged on which rename "turns the file into a Windows executable." 
 >
 > The double-extension form (`Sarah_Chen_Notes.exe.Txt`) is also a Windows-specific user-interface attack — by default, Windows Explorer hides "known file extensions," meaning a user sees `Sarah_Chen_Notes.exe` displayed for a file actually named `Sarah_Chen_Notes.exe.Txt`. Combined with a custom icon, this is how attackers trick users into thinking a `.exe` is a `.txt`. The defensive response is the same as it's been for 20 years: turn on "show file extensions" in every user's Explorer, every time. Most orgs still don't.
 
+# PRACTICEHunt 03 — Q26 — Double-Extension Evasion
+
+**Goal:** Identify the filename used as the intermediate double-extension form between text file and executable.
+
+**Approach:** Already in the Q25 rename chain. Between `Sarah_Chen_Notes.Txt` and the final `Sarah_Chen_Notes.exe`, the operator briefly renamed the file to `Sarah_Chen_Notes.exe.Txt` at 2:14:02 PM. Windows treats the file as a text file (because `.Txt` is the actual final extension) but the filename visually contains `.exe`, exploiting the default "hide known file extensions" Explorer setting to disguise the staged executable.
+
+**Flag:** `Sarah_Chen_Notes.exe.Txt`
