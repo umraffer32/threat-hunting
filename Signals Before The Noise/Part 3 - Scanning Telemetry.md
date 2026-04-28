@@ -173,3 +173,51 @@ Result: 57 total = 53 public + 4 private. Two candidates were now in play — **
 > **Lesson:** Two outcomes against the same target on the same port aren't just two events — they're a behavioral pivot. A pure `ConnectionAttempt` is a scanner firing one packet and moving on. An `InboundConnectionAccepted` after an attempt means the source got a TCP handshake, which is what enables credential brute-forcing, banner grabbing, or vulnerability fingerprinting. Sources that show both have *engaged* with the service, not just observed that it exists. In real-world hunting, this set — sources that completed a handshake — is where you focus next: filter the auth telemetry to *just these IPs* and you've collapsed your investigation surface from "every public scanner on the internet" to "the subset that actually tried to talk to the service."
 >
 > The technical lesson layered underneath: when chaining filters across questions, the right scope to carry forward is the one the *current* question explicitly demands, not the one the *previous* question implied. Q07 burned us for stripping a filter the question expected to inherit. Q09 would have burned us for the opposite mistake — inheriting a filter the question didn't demand. Read each question's text against the schema, not against the last query. Q08 said "public source IP." Q09 said "source IPs." Different questions, different scopes.
+
+# PRACTICEHunt 03 — Q10 — Countries with RDP Activity
+
+**Goal:** Enrich the Q09 source set with geographic data and count the distinct countries associated with the RDP connection activity.
+
+**Approach:** First geo enrichment of the hunt. The pattern is to reuse Q09's query as the input set, prepend the `GeoTable` `externaldata` block from the briefing, and pipe the result through `evaluate ipv4_lookup(GeoTable, RemoteIP, network)` to attach country fields to each IP. Then `dcount(country_name)` gives the answer.
+
+```kql
+let GeoTable =
+    externaldata(network:string, geoname_id:long, continent_code:string,
+                 continent_name:string, country_iso_code:string, country_name:string)
+    [@"https://raw.githubusercontent.com/datasets/geoip2-ipv4/main/data/geoip2-ipv4.csv"]
+    with (format="csv");
+DeviceNetworkEvents
+| where TimeGenerated between (datetime(2025-12-09) .. datetime(2025-12-23))
+| where DeviceName == "azwks-phtg-02"
+| where LocalPort == 3389
+| where ActionType in ("ConnectionAttempt", "InboundConnectionAccepted")
+| summarize Outcomes = make_set(ActionType) by RemoteIP
+| where array_length(Outcomes) > 1
+| evaluate ipv4_lookup(GeoTable, RemoteIP, network)
+| summarize DistinctCountries = dcount(country_name)
+```
+
+<img width="322" height="142" alt="image" src="https://github.com/user-attachments/assets/b316ab26-3277-4020-86b0-777d2cc31720" />
+
+
+That returned **11**. A diagnostic version confirmed the join was clean — `ipv4_lookup` silently dropped the 4 private IPs (they don't match any network in the public GeoIP table), leaving 53 public IPs all enriched with no gaps:
+
+```kql
+... (same query through the lookup) ...
+| summarize 
+    TotalIPs = count(),
+    IPsWithCountry = countif(isnotempty(country_name)),
+    IPsWithoutCountry = countif(isempty(country_name)),
+    DistinctCountries = dcount(country_name)
+```
+
+<img width="781" height="227" alt="image" src="https://github.com/user-attachments/assets/40a4de93-e7c4-4c37-9606-de5d69395b41" />
+
+
+53 IPs in, 53 enriched, 0 missing → 11 countries was rock solid.
+
+**Flag:** `11`
+
+> **Lesson:** `ipv4_lookup` is an *inner join* by default — IPs that don't match any network in the lookup table get dropped from the result, not preserved with null country fields. That's a feature when you're enriching public IPs (private/RFC1918 addresses don't belong in geo analysis), but it's a footgun if you assume the join is preserving every row. Always run a `count() vs countif(isnotempty(country_name))` diagnostic on the first geo query of an investigation to confirm the join is doing what you think it is. If `TotalIPs` after the lookup is smaller than `TotalIPs` before the lookup, you have silent drops — usually private IPs (fine), but occasionally public IPs missing from the dataset (a real gap).
+>
+> The broader lesson: every enrichment is a join, and every join is an opportunity for silent data loss. Geo lookups, threat intel matches, asset inventory pivots — they all behave this way. Verify cardinality before and after.
