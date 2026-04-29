@@ -21,7 +21,7 @@ DeviceNetworkEvents
 Port `3389` returned 194 connections from 173 distinct public source IPs, all logged as `InboundConnectionAccepted`. Every other port in the result clustered at 4–5 connections from 4–5 sources. The 3389 row is two orders of magnitude above the rest of the distribution — that's not a user, that's the internet.
 
 <img width="644" height="365" alt="image" src="https://github.com/user-attachments/assets/ab5b5d51-b1fe-4fc6-a086-aee364e84218" />
-
+<br>
 
 **Flag:** `3389`
 
