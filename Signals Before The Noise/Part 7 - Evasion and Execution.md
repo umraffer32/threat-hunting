@@ -162,3 +162,6 @@ Result: **Uruguay, South America** — same country as the successful auth IPs (
 
 > **Lesson:** Default-port C2 is a free detection win for defenders. Port 4444 is the default Metasploit Meterpreter listener; 5555 is the default for some Cobalt Strike configurations; 8080 is overloaded but commonly seen with commodity frameworks. None of these ports have legitimate enterprise outbound use cases on workstations — alerting on any outbound connection from a non-server host to a public IP on these ports catches commodity offensive tooling at near-zero false-positive cost. The fact that this operator left the Meterpreter handler on the default port (and didn't even bother with HTTPS-style port reuse on 443) is consistent with the rest of their tradecraft: brute-forced default admin account, default Metasploit payload, default port. The operator was efficient, not careful.
 
+---
+
+[⬆ Back to Table of Contents](./README.md#table-of-contents)
