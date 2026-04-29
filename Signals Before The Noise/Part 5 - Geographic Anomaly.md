@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Q18 — Unexpected Country
+# Q18 — Unexpected Country
 
 **Goal:** Identify the successful-auth country that falls outside PHTG's expected operating region.
 
@@ -8,7 +8,7 @@
 
 > **Lesson:** Geographic baseline checks are one of the highest-signal, lowest-cost detection rules available — but only if the operating footprint is documented. A single-region company turns every out-of-region successful auth into an automatic high-severity alert with near-zero false positives.
 
-# PRACTICEHunt 03 — Q19 — Account Used
+# Q19 — Account Used
 
 **Goal:** Identify the account used in the successful RDP authentication from the unexpected country.
 
@@ -43,7 +43,7 @@ DeviceLogonEvents
 >
 > Two takeaways for detection and hardening: first, audit local admin account names across the fleet — anything matching common defaults or placeholder patterns gets flagged. Second, treat *any* successful auth on a default-named admin account as high-severity, regardless of source — those accounts are supposed to be rotated out of existence post-provisioning, so a successful logon is itself the anomaly.
 
-# PRACTICEHunt 03 — Q20 — Uruguay Success Count
+# Q20 — Uruguay Success Count
 
 **Goal:** Count the successful RDP authentication events originating from the unexpected country.
 
@@ -68,7 +68,7 @@ DeviceLogonEvents
 
 **Flag:** `23`
 
-# PRACTICEHunt 03 — Q21 — First RemoteIP from Uruguay
+# Q21 — First RemoteIP from Uruguay
 
 **Goal:** Identify the RemoteIP associated with the first successful RDP authentication from the unexpected country.
 
@@ -97,7 +97,7 @@ DeviceLogonEvents
 
 > **Lesson:** The two-IP pattern is a behavioral fingerprint worth recognizing. `173.244.55.131` shows up once — the *initial successful credential discovery* — and then `173.244.55.128` takes over for the next ~8 hours of session activity. That's the classic operator pattern: one IP burns through the brute-force list until it finds working credentials, then the operator pivots to a clean IP (often a different VPS in the same hosting provider's range) for actual hands-on-keyboard work. The `.128`/`.131` adjacency suggests both IPs come from the same /24, likely the same VPS provider — common for cheap bulletproof hosting. From a detection standpoint: any successful auth from an IP that is preceded by failed auths from a *neighboring* IP in the same /24 is worth alerting on, because that's the brute-force-then-pivot signature.
 
-# PRACTICEHunt 03 — Q22 — Second RemoteIP from Uruguay
+# Q22 — Second RemoteIP from Uruguay
 
 **Goal:** Identify the second RemoteIP associated with successful authentication events from the unexpected country.
 
