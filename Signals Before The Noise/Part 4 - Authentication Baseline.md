@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Q11 — Total External Auth Volume
+# Q11 — Total External Auth Volume
 
 **Goal:** Count externally sourced authentication events recorded for the device.
 
@@ -42,7 +42,7 @@ DeviceLogonEvents
 >
 > The volume itself is also worth pausing on: 693 external auth events against a single workstation in 14 days is far above any realistic legitimate baseline. A normal user signs in a handful of times a day, almost always from the same handful of IPs. Hundreds of external auth events on one host is the unmistakable signature of brute-force activity, and it's the cue to start carving the data by failure reason, source IP, and account name in the next questions.
 
-# PRACTICEHunt 03 — Q12 — RDP Auth Volume
+# Q12 — RDP Auth Volume
 
 **Goal:** Count externally sourced authentication events related to Remote Desktop on the device.
 
@@ -101,7 +101,7 @@ DeviceLogonEvents
 >
 > The process lesson is just as important: when a confident-feeling answer is wrong and the next-best guess is around 70%, paying for the explicit hint is cheaper than burning a third attempt. Two attempts at 100% confidence each beats three attempts at 70% — both in points and in not training yourself to guess. The 15-point hint here cost less than a third question would have, and it eliminated all interpretive ambiguity instead of just narrowing it.
 
-# PRACTICEHunt 03 — Q13 — Dominant Auth Outcome
+# Q13 — Dominant Auth Outcome
 
 **Goal:** Identify the most frequent authentication outcome for RDP-related logon activity.
 
@@ -121,7 +121,7 @@ DeviceLogonEvents
 
 **Flag:** `LogonFailed`
 
-# PRACTICEHunt 03 — Q14 — Dominant Failure Reason
+# Q14 — Dominant Failure Reason
 
 **Goal:** Identify the most common failure reason recorded for RDP-related authentication attempts.
 
@@ -144,7 +144,7 @@ DeviceLogonEvents
 
 **Flag:** `InvalidUserNameOrPassword`
 
-# PRACTICEHunt 03 — Q15 — Countries from Auth Activity
+# Q15 — Countries from Auth Activity
 
 **Goal:** Count the unique countries associated with RDP-related authentication events on the device.
 
@@ -176,7 +176,7 @@ DeviceLogonEvents
 >
 > 2. **The geographic spread tells you the threat profile.** Eleven countries was already broad enough to call this "global botnet noise"; 17 confirms it. This isn't a targeted actor probing from a small set of operator nodes — this is mass credential brute-force from compromised infrastructure scattered across continents. That distinction matters for response: targeted attackers warrant deep forensic investigation; opportunistic mass scanning warrants exposure reduction (close the port, geofence, require VPN) over per-IP attribution.
 
-# PRACTICEHunt 03 — Q16 — Countries with Successful Auth
+# Q16 — Countries with Successful Auth
 
 **Goal:** Of the 17 countries with RDP-related auth events, count how many had at least one successful authentication.
 
@@ -211,7 +211,7 @@ Result: **United States** and **Uruguay**. Two countries authenticated successfu
 >
 > The detection-engineering takeaway: when triaging RDP-exposed assets, the alert that matters isn't "many failed logins" (you'll get those from internet noise no matter what). It's **"first-ever successful auth from a country that has never previously authenticated."** That single signal would have caught this in real time — and it's a one-line analytics rule on `DeviceLogonEvents` joined to a country-baseline table. Cheap to build, high signal, and as this lab shows, it pinpoints the suspect without any other context.
 
-# PRACTICEHunt 03 — Q17 — Successful Countries
+# Q17 — Successful Countries
 
 **Goal:** Identify the countries associated with successful RDP authentication events.
 
