@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Q30 — Why Did It Run?
+# Q30 — Why Did It Run?
 
 **Goal:** Identify the change to Defender's operating state that allowed the payload to execute after being quarantined three times earlier in the same hour.
 
@@ -35,7 +35,7 @@ The `ReportSource` value in the raw telemetry rendered as `Windows Defender Anti
 >
 > Two more layered observations: (1) The transition happened *after* three successful quarantines in seven minutes — meaning the operator saw their first three drops fail, then escalated to disabling AV before redropping. That's a tell about operator skill (they understood what was killing the payload and knew where to apply pressure). (2) The detections continued to fire in passive mode — Defender kept *seeing* the threat, it just couldn't act on it. That's actually a gift to defenders: even when AV is disarmed, the telemetry flow doesn't stop. Hunting `AntivirusDetectionActionType` events with `ReportSource` containing "passive mode" surfaces every host where AV is currently disarmed, regardless of whether the attacker ever gets caught any other way. That's a one-line query for a fleet-wide health check on Defender posture.
 
-# PRACTICEHunt 03 — Q31 — First Execution
+# Q31 — First Execution
 
 **Goal:** Identify the filename the payload ran under during its first execution phase.
 
@@ -66,7 +66,7 @@ Phase 1 is operator-driven manual execution — `explorer.exe` as parent means t
 
 > **Lesson:** The two-phase execution pattern — manual `explorer.exe`-spawned execution followed by scripted `cmd.exe`-spawned execution from a different path — is the signature of an attacker transitioning from hands-on-keyboard validation to persistence. Phase 1 is the operator confirming the payload runs and behaves correctly under their direct control. Phase 2 is the payload being launched by whatever persistence mechanism the operator installed once they were satisfied (scheduled task, service, registry Run key, Startup folder shortcut — all of which spawn child processes through `cmd.exe`, `svchost.exe`, or the persistence mechanism's own loader). The parent-process change combined with the path change is a stronger signal than either alone: same hash, different parent, different folder = persistence handoff. Detection rules that track execution counts of a given hash across distinct parent processes catch this transition reliably, and the phase break itself is often the cleanest forensic anchor for "when did this stop being a manual intrusion and start being persistent malware?"
 
-# PRACTICEHunt 03 — Q32 — Parent Process
+# Q32 — Parent Process
 
 **Goal:** Identify the parent process that launched the payload during the later execution phase.
 
@@ -74,7 +74,7 @@ Phase 1 is operator-driven manual execution — `explorer.exe` as parent means t
 
 **Flag:** `cmd.exe`
 
-# PRACTICEHunt 03 — Q33 — Batch File Wrapper
+# Q33 — Batch File Wrapper
 
 **Goal:** From the Phase 2 `cmd.exe` command line, extract the full path of the `.bat` file that ran the payload.
 
@@ -99,7 +99,7 @@ Two matching rows came back — both with command line `cmd.exe /c "C:\ProgramDa
 
 > **Lesson:** Wrapping a payload in a `.bat` file launched via `cmd.exe /c` is a small but deliberate evasion choice. Direct execution of `PHTG.exe` would log a process tree of `explorer.exe → PHTG.exe` — a clean parent-child relationship pointing straight at the payload. Wrapping in a batch file produces `explorer.exe → cmd.exe → PHTG.exe`, which (a) breaks the visual signal that "the user ran the .exe directly" because the immediate parent is now a benign Windows shell, (b) lets the attacker stage prep commands (env vars, working directory changes, log redirection) before the payload fires without leaving them as separate process events, and (c) defeats simplistic "alert on direct execution from `C:\ProgramData\` by user account" rules because the user is technically launching `cmd.exe`, not the suspicious binary. The detection lift is the same as Q28's lesson: pivot on the *hash*, not the parent. Any `.exe` running from a service directory under a user account context is suspicious regardless of whether `cmd.exe` is in the chain. And the `.bat` itself is now a high-value forensic artifact — its contents will reveal whether the operator built additional staging logic (network calls, env setup, sleep/loop patterns) on top of just running the payload.
 
-# PRACTICEHunt 03 — Q34 — C2 IP
+# Q34 — C2 IP
 
 **Goal:** Identify the external IP the compromised device attempted to communicate with after the payload executed.
 
@@ -126,7 +126,7 @@ The signal density on this single result is high. The C2 IP `173.244.55.130` liv
 
 > **Lesson:** This is the question where the entire kill chain stitches together into one narrative: the same /24 that hosted the brute-force traffic, the successful auth, and now the C2 callback. That kind of cross-phase IP correlation is the gold standard for attribution within a single incident — it ties auth-layer evidence to network-layer evidence to process-layer evidence and lets you say *"this is one operator, this is one piece of infrastructure, this is one attack."* The detection-engineering takeaway is to monitor for any internal host beaconing to a /24 that recently appeared in successful-auth telemetry — if a brand-new external network range authenticates against your environment and that same range later appears as an outbound C2 destination, that's the same actor on both ends, not two unrelated events. Port `4444` is also a free signal: any outbound connection to `4444/tcp` from a workstation should fire, since legitimate enterprise software almost never uses that port and any commodity offensive framework using its default settings does. The combination of "outbound to recent-auth /24 + commodity C2 port + executable in `C:\ProgramData\<service>\`" is a near-zero-false-positive analytic that catches the entire pattern in one rule.
 
-# PRACTICEHunt 03 — Q35 — C2 Geography
+# Q35 — C2 Geography
 
 **Goal:** Identify the country and continent of the C2 infrastructure.
 
@@ -152,7 +152,7 @@ Result: **Uruguay, South America** — same country as the successful auth IPs (
 
 > **Lesson:** Geographic confirmation across phases closes the attribution loop. When the brute-force IP, the successful-auth IP, and the C2 IP all geo-resolve to the same country *and* live in the same /24, the case for "single operator, single infrastructure rental, single coordinated attack" is essentially airtight. From a detection standpoint, this kind of cross-phase consistency is the difference between a noisy alert chain and a high-confidence incident: any one phase in isolation could be coincidence (random scanner, random C2 destination, random successful auth), but three phases tied to one /24 cannot be coincidental. Building incident-correlation rules that bucket events by source-IP /24 and look for activity spanning multiple kill-chain phases (auth + network + process telemetry) catches sophisticated actors who rotate individual IPs but reuse the same hosting infrastructure across an operation.
 
-# PRACTICEHunt 03 — Q36 — C2 Remote Port
+# Q36 — C2 Remote Port
 
 **Goal:** Identify the remote port the post-execution payload used for C2 callback.
 
