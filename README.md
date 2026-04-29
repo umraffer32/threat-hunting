@@ -44,6 +44,5 @@ The top-level README is the executive summary. The section files are where the a
 What tends to show up across these hunts:
  
 - **Microsoft Sentinel** — KQL, `SigninLogs`, `CloudAppEvents`, `EmailEvents`, `DeviceEvents`
-- **Splunk** — SPL, when the lab/scenario uses it
 - **MITRE ATT&CK** — the common vocabulary across every writeup
-- **CTF platforms** — LetsDefend, TryHackMe, BTLO, HTB, and similar, depending on source
+
