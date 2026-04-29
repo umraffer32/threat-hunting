@@ -8,7 +8,7 @@ A personal collection of threat hunting writeups, CTFs, and incident response ex
  
 | Hunt | Scenario | Platform | Status |
 |---|---|---|---|
-| [PRACTICEHunt 02](./PRACTICEHunt-02/) | BEC via MFA fatigue — Scattered Spider | Microsoft Sentinel | ✅ Complete |
+| [Hunt 02](https://github.com/umraffer32/scattered-spider-hunt) | BEC via MFA fatigue — Scattered Spider | Microsoft Sentinel | ✅ Complete |
 |  |  |  |  |
  
 ---
