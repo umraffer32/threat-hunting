@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Public Exposure
+# Hunt 03 — Public Exposure
 
 Phase 01 of the *Signals Before The Noise* investigation. A PHTG cloud engineer posted a LinkedIn photo of her workstation with the Azure portal open and a VM's full Properties pane visible. No alerts have fired. The hunt is proactive — figure out what was exposed in the photo, whether anyone saw it, and whether anyone acted on it.
 
