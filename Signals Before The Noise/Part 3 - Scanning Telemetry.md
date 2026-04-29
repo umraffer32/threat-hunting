@@ -221,3 +221,8 @@ That returned **11**. A diagnostic version confirmed the join was clean — `ipv
 > **Lesson:** `ipv4_lookup` is an *inner join* by default — IPs that don't match any network in the lookup table get dropped from the result, not preserved with null country fields. That's a feature when you're enriching public IPs (private/RFC1918 addresses don't belong in geo analysis), but it's a footgun if you assume the join is preserving every row. Always run a `count() vs countif(isnotempty(country_name))` diagnostic on the first geo query of an investigation to confirm the join is doing what you think it is. If `TotalIPs` after the lookup is smaller than `TotalIPs` before the lookup, you have silent drops — usually private IPs (fine), but occasionally public IPs missing from the dataset (a real gap).
 >
 > The broader lesson: every enrichment is a join, and every join is an opportunity for silent data loss. Geo lookups, threat intel matches, asset inventory pivots — they all behave this way. Verify cardinality before and after.
+
+
+---
+
+[⬆ Back to Table of Contents](./README.md#table-of-contents)
