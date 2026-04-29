@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Q23 — First Notable Process
+# Q23 — First Notable Process
 
 **Goal:** Identify the first notable process after the first successful Uruguay authentication — the earliest event indicating a person began interacting with the system purposefully.
 
@@ -65,7 +65,7 @@ Notepad, calc, mspaint, and Task Manager launched from `powershell.exe` in six s
 >
 > The process lesson also matters. Two confident-feeling attempts both wrong is the signal that the *framework* is wrong, not just the candidate. After Attempt 2, the right move wasn't to pick the next-best item from the list — it was to question whether the right list had even been generated. Adding `where FileName !in ("msedge.exe", "powershell.exe")` made the answer obvious in one query. When stuck, exclude what you've already tried and look at what remains; the answer is often hiding behind the noise floor of your prior assumptions.
 
-# PRACTICEHunt 03 — Q24 — Sensitive Text File
+# Q24 — Sensitive Text File
 
 **Goal:** Identify which text file opened during the operator session contains internal security-relevant content that would meaningfully reduce an attacker's effort if reviewed.
 
@@ -136,7 +136,7 @@ The naming reasoning becomes obvious in retrospect:
 >
 > The process lesson layered in: when reasoning about ambiguous content questions, the available follow-up activity (the SharePoint/AAD URLs in this case) is a tempting signal but can be misleading. The operator could browse SharePoint and Azure AD docs because they read about them in *any* of the four files — or for general orientation reasons unrelated to those files at all. Process telemetry showed the actions but not which file *caused* which action. The naming convention of the files themselves was actually a stronger signal than the post-hoc URL pattern, and the hint had to bring me back to that.
 
-# PRACTICEHunt 03 — Q25 — First Executable Form
+# Q25 — First Executable Form
 
 **Goal:** Identify the first renamed filename where the extension turns the file into a Windows executable.
 
@@ -169,7 +169,7 @@ The question hinged on which rename "turns the file into a Windows executable." 
 >
 > The double-extension form (`Sarah_Chen_Notes.exe.Txt`) is also a Windows-specific user-interface attack — by default, Windows Explorer hides "known file extensions," meaning a user sees `Sarah_Chen_Notes.exe` displayed for a file actually named `Sarah_Chen_Notes.exe.Txt`. Combined with a custom icon, this is how attackers trick users into thinking a `.exe` is a `.txt`. The defensive response is the same as it's been for 20 years: turn on "show file extensions" in every user's Explorer, every time. Most orgs still don't.
 
-# PRACTICEHunt 03 — Q26 — Double-Extension Evasion
+# Q26 — Double-Extension Evasion
 
 **Goal:** Identify the filename used as the intermediate double-extension form between text file and executable.
 
@@ -177,7 +177,7 @@ The question hinged on which rename "turns the file into a Windows executable." 
 
 **Flag:** `Sarah_Chen_Notes.exe.Txt`
 
-# PRACTICEHunt 03 — Q27 — File SHA256
+# Q27 — File SHA256
 
 **Goal:** Capture the SHA256 hash of the payload file.
 
@@ -185,7 +185,7 @@ The question hinged on which rename "turns the file into a Windows executable." 
 
 **Flag:** `224462ce5e3304e3fd0875eeabc829810a894911e3d4091d4e60e67a2687e695`
 
-# PRACTICEHunt 03 — Q28 — Final File Name
+# Q28 — Final File Name
 
 **Goal:** Track the payload file forward through rename events using its SHA256 hash, and identify the final observed filename tied to that hash.
 
@@ -217,7 +217,7 @@ The attacker moved the payload out of Sarah's user profile and into `C:\ProgramD
 >
 > The cleanup pattern reflexively reinforces the same lesson — for incident response, *always* establish the SHA256 of any suspicious file early and use it as the pivot key for the rest of the investigation. Filenames, paths, and parent processes are reliable until they aren't. Hashes don't lie.
 
-# PRACTICEHunt 03 — Q29 — File Classification
+# Q29 — File Classification
 
 **Goal:** Identify the malware family that Microsoft Defender classifies the payload under, according to MDE telemetry on the device.
 
