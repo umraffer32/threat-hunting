@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Q06 — Broad Scanning Indicators
+# Broad Scanning Indicators
 
 **Goal:** Identify the local port with the strongest signal of broad, automated scanning against the exposed VM.
 
@@ -27,7 +27,7 @@ Port `3389` returned 194 connections from 173 distinct public source IPs, all lo
 
 > **Lesson:** Raw connection count is a noisy metric — a single chatty client can inflate it. Distinct-source-IP count is the real scanning signature, because automated scanners are characterized by *breadth* (many sources hitting one target) rather than *volume* (one source hitting many times). When triaging exposure on a public-facing host, always aggregate by destination port and look at the source-IP cardinality. Anything more than a handful of distinct public IPs hitting an admin port (3389, 22, 5985, 445) within a short window is scanning until proven otherwise. And RDP on the open internet remains the single most-scanned port on IPv4 — exposing 3389 publicly guarantees discovery within hours of provisioning.
 
-# PRACTICEHunt 03 — Q07 — Exposure Activity Volume
+# Q07 — Exposure Activity Volume
 
 **Goal:** Count the network events targeting port 3389 on the exposed VM.
 
@@ -98,7 +98,7 @@ DeviceNetworkEvents
 >
 > One quirk worth remembering: in `DeviceNetworkEvents`, MDE leaves `RemoteIPType` unset (blank) on `ConnectionAttempt` events. Any positive filter on that column (`== "Public"`, `== "Private"`) silently drops those rows. That behavior was the difference between 325 and 194 here — and it's the kind of gotcha that turns a confident query into a wrong answer if you don't run a `summarize by` to see what your filter is actually scoping out.
 
-# PRACTICEHunt 03 — Q08 — Source Diversity
+# Q08 — Source Diversity
 
 **Goal:** Count the unique public source IP addresses that targeted the exposed RDP service.
 
@@ -122,7 +122,7 @@ A sanity check that included `RemotePort == 3389` events returned the same numbe
 
 > **Lesson:** A diagnostic groupby earlier in an investigation often answers later questions for free. The `UniqueSourceIPs = dcount(RemoteIP)` column was added to the Q06 query for a reason — distinct-source cardinality is the canonical scanning anomaly metric — and once it surfaced 173 on the 3389 row, that number was committed for any later question about scanner diversity. The discipline worth practicing is *projecting more columns than you currently need* during early hunt queries: `count()`, `dcount(RemoteIP)`, `min()`/`max()` of timestamps, distinct action types. None of them cost meaningfully more, and the same dataframe ends up answering 3–4 downstream questions without re-querying. The cost of a too-narrow first query is having to re-scope and re-run when the next question lands; the cost of a wider one is one extra column on screen.
 
-# PRACTICEHunt 03 — Q09 — Connection Outcomes
+# Q09 — Connection Outcomes
 
 **Goal:** Count source IPs that show both a connection attempt and an accepted connection against the exposed RDP service — sources that received an actual TCP response, a different threat class than raw probes.
 
@@ -174,7 +174,7 @@ Result: 57 total = 53 public + 4 private. Two candidates were now in play — **
 >
 > The technical lesson layered underneath: when chaining filters across questions, the right scope to carry forward is the one the *current* question explicitly demands, not the one the *previous* question implied. Q07 burned us for stripping a filter the question expected to inherit. Q09 would have burned us for the opposite mistake — inheriting a filter the question didn't demand. Read each question's text against the schema, not against the last query. Q08 said "public source IP." Q09 said "source IPs." Different questions, different scopes.
 
-# PRACTICEHunt 03 — Q10 — Countries with RDP Activity
+# Q10 — Countries with RDP Activity
 
 **Goal:** Enrich the Q09 source set with geographic data and count the distinct countries associated with the RDP connection activity.
 
