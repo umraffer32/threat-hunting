@@ -218,3 +218,7 @@ Result: **United States** and **Uruguay**. Two countries authenticated successfu
 **Approach:** Already surfaced by the Q16 query, which used `make_set(country_name)` alongside the `dcount` to capture the country names directly. The set returned `["Uruguay", "United States"]`.
 
 **Flag:** `United States, Uruguay`
+
+---
+
+[⬆ Back to Table of Contents](./README.md#table-of-contents)
