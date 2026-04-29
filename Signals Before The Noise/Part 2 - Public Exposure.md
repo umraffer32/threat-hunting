@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Q01 — Identifying the Exposed Asset
+# Q01 — Identifying the Exposed Asset
 
 **Goal:** Anchor the investigation to the specific virtual machine visible in the leaked LinkedIn photo.
 
@@ -6,7 +6,7 @@
 
 **Flag:** `azwks-phtg-02`
 
-# PRACTICEHunt 03 — Q02 — Public Exposure Vector
+# Q02 — Public Exposure Vector
 
 **Goal:** Identify the public IP address attached to the exposed VM — the actual reachable surface from the internet.
 
@@ -16,7 +16,7 @@
 
 > **Lesson:** A VM hostname leak is embarrassing; a public IP leak is exploitable. Hostnames don't route — they're naming for humans. An IP is the actual ingress point, and once it's public, every scanner on the internet can reach it within minutes. From this single value, an attacker can run port scans, service fingerprinting, CVE matching, and credential spraying without ever needing to resolve DNS or know the company exists. This is the pivot point where an OSINT leak becomes a network-level threat.
 
-# PRACTICEHunt 03 — Q03 — When Context Becomes Actionable
+# Q03 — When Context Becomes Actionable
 
 **Goal:** Identify which piece of leaked information gives an external threat actor the clearest immediate path to action.
 
@@ -26,7 +26,7 @@
 
 > **Lesson:** "Information disclosure" findings get triaged by what an attacker can *do* with them, not by how sensitive they sound. Hostname, OS, region — those are passive context. A public IP is active surface. When writing up an OSINT exposure, lead with the routable identifiers (IPs, FQDNs, exposed ports) because those are what convert a leak into a live attack path. Everything else is enrichment for the exploitation phase, not the access phase.
 
-# PRACTICEHunt 03 — Q04 — OSINT Correlation
+# Q04 — OSINT Correlation
 
 **Goal:** Classify the activity visible on the leaked workstation screen.
 
@@ -36,7 +36,7 @@
 
 > **Lesson:** OSINT classification matters because it tells you *what an attacker now knows about your operations*. A photo of someone coding leaks development practices. A photo of an incident response screen leaks tooling and detection capability. A photo of cloud infrastructure management leaks asset inventory, naming conventions, subscription structure, and — as in this case — exact routable identifiers. Each activity type maps to a different threat model, and the worst leak is usually the one that exposes live, addressable production assets. That's the category PHTG is now sitting in.
 
-# PRACTICEHunt 03 — Q05 — Evidence Source Selection
+# Q05 — Evidence Source Selection
 
 **Goal:** Pick the right telemetry source to determine whether the exposed public IP was scanned or enumerated.
 
