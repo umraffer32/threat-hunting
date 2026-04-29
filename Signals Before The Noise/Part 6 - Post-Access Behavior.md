@@ -255,4 +255,6 @@ Trojan is the *category*; Meterpreter is the actual *family*. The question asks 
 
 > **Lesson:** Microsoft threat names follow a strict structure that rewards careful parsing: the family — the part most useful for attribution and threat-intel pivoting — sits between the platform slash and the variant dot. Submitting the type ("Trojan") would be like answering "what model car?" with "sedan." Right shape, wrong specificity.
 
+---
 
+[⬆ Back to Table of Contents](./README.md#table-of-contents)
