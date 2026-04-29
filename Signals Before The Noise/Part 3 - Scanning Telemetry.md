@@ -1,4 +1,4 @@
-# Broad Scanning Indicators
+# Q06 - Broad Scanning Indicators
 
 **Goal:** Identify the local port with the strongest signal of broad, automated scanning against the exposed VM.
 
