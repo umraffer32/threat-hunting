@@ -104,3 +104,7 @@ DeviceLogonEvents
 **Approach:** Already surfaced by the Q19 result. Two distinct Uruguay IPs appeared: `173.244.55.131` (Q21, first hit) and `173.244.55.128` (the remaining 22 successful auths).
 
 **Flag:** `173.244.55.128`
+
+---
+
+[⬆ Back to Table of Contents](./README.md#table-of-contents)
