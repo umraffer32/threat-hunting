@@ -1,4 +1,4 @@
-# PRACTICEHunt 03 — Q37 — Repurposed Baseline
+# Q37 — Repurposed Baseline
 
 **Goal:** Identify the legitimate internal service whose directory the attacker repurposed to host the final payload.
 
