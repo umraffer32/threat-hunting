@@ -5,7 +5,6 @@
 > **External RDP Compromise · PHTG · December 2025**
 > A proactive OSINT-driven threat hunt across 5 MDE tables, reconstructing the full kill chain from a leaked LinkedIn photo to in-memory C2.
 
-> 🔒 **Repository Status:** Private while the hunt is active. Will be made public once the lab is retired.
 
 ---
 
