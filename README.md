@@ -8,7 +8,8 @@ A personal collection of threat hunting writeups, CTFs, and incident response ex
  
 | Hunt | Scenario | Platform | Status |
 |---|---|---|---|
-| [Hunt 02](https://github.com/umraffer32/scattered-spider-hunt) | BEC via MFA fatigue — Scattered Spider | Microsoft Sentinel | ✅ Complete |
+| [Hunt-1](https://github.com/umraffer32/threat-hunting/tree/main/Signals%20Before%20The%20Noise) | Signals Before the Noise - External RDP Compromise | Microsoft Sentinel | ✅ Complete |
+| [Hunt-2](https://github.com/umraffer32/threat-hunting/tree/main/Scattered%20Spider) | Sacttered Spider - BEC via MFA fatigue | Microsoft Sentinel | ✅ Complete |
 |  |  |  |  |
  
 ---
