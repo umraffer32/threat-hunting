@@ -230,3 +230,32 @@ This email serves as the attacker's persistent identifier across the exfiltratio
 > **Lesson:** Credentials in command lines are the easiest IOCs to extract. Exfiltration tools require authentication, and that authentication is logged verbatim in process execution events. Always parse tool arguments for `--user`, `--password`, `-u`, `-p`, and similar flags. The email or username becomes an attribution anchor for linking attacker infrastructure across multiple incidents.
 
 </details>
+
+<details>
+<summary>Q04 — Domain Compromise Evidence</summary>
+
+**Goal:** Identify the specific file that proves the attacker accessed the Domain Controller's credential database.
+
+**Approach:** This question requires finding evidence of NTDS.dit extraction. The attacker used vssadmin to create a volume shadow copy of the locked database, then copied it to a temporary location. Search the Domain Controller logs for vssadmin commands followed by copy operations targeting the shadow copy path.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Computer has "EEU3IA2"
+| where CommandLine_s has "ntds"
+| project TimeGenerated, CommandLine_s
+```
+
+The DC logs showed:
+
+<img width="1084" height="61" alt="image" src="https://github.com/user-attachments/assets/2009173d-d2e6-43e5-bb3b-0061ef76a677" />
+<br>
+
+The attacker created a VSS shadow copy (vssadmin create shadow /For=C:) to bypass the file lock on ntds.dit, then copied the entire Active Directory credential database from the shadow copy to a temporary staging file. This single file contains every domain user's password hash.
+
+**Flag:** `ntds.dit`
+
+> **Lesson:** NTDS.dit is the crown jewel of domain compromise. It's locked while the Domain Controller is running, but VSS shadow copies bypass this protection. The extraction pattern is distinctive: vssadmin creates the copy, then a copy command reads from \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy* path. When you see this pattern, you're looking at a domain-wide credential theft in progress.
+
+</details>
