@@ -606,7 +606,7 @@ EmberForgeX_CL
 | order by TimeGenerated asc
 ```
 
-<img width="1191" height="39" alt="image" src="https://github.com/user-attachments/assets/23b1361d-418d-4955-b151-6f5af74491f9" />
+<img width="1096" height="42" alt="image" src="https://github.com/user-attachments/assets/489a4380-1c74-49e5-99eb-38e51766c47c" />
 <br>
 
 The results surfaced DNS lookups from update.exe to `cdn.cloud-endpoint.net` — a domain crafted to blend in with legitimate cloud infrastructure traffic.
@@ -617,3 +617,51 @@ The results surfaced DNS lookups from update.exe to `cdn.cloud-endpoint.net` —
 
 </details>
 
+<details>
+<summary>Q17 — Primary C2 IP</summary>
+
+**Goal:** Identify the IP address that the C2 domain resolved to.
+
+**Approach:** The Q16 DNS query event (EventID 22) for cdn.cloud-endpoint.net contained the resolved IP in the Raw_s field. The question pointed directly to the QueryResults field in the raw XML — no additional query needed, just parsing the event data already in hand.
+
+The Raw_s field from the EventID 22 event showed:
+
+```
+QueryResults: ::ffff:172.67.174.46;::ffff:104.21.30.237
+```
+
+Two IPs returned from the DNS resolution. The question asked for the primary C2 IP, which was the second value in the QueryResults field.
+
+**Flag:** `104.21.30.237`
+
+> **Lesson:** DNS query events (EventID 22) don't just log the domain — they log the resolved IPs in the QueryResults field. That's two IOCs for the price of one query: the C2 domain and its IP. When enriching threat intelligence from a hunt, always pull the QueryResults field from DNS events. The IP becomes a network-level block candidate that works even if the attacker rotates to a new domain but keeps the same infrastructure.
+
+</details>
+
+<details>
+<summary>Q18 — Injection Chain</summary>
+
+**Goal:** Identify the process injection chain used by the malicious DLL to hide activity in a legitimate process.
+
+**Approach:** Sysmon EventID 8 (CreateRemoteThread) logs process injection directly — it captures the source process injecting into a target process. Searched all EventID 8 events across the investigation window.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where EventID_s == 8
+| project TimeGenerated, Computer, SourceImage_s, TargetImage_s
+| order by TimeGenerated asc
+```
+
+The first row on the workstation at 10:43:22 PM showed rundll32.exe injecting into notepad.exe — 13 seconds after the DLL loaded. The malicious DLL used rundll32 as the injection source and notepad as the cover process.
+<br>
+
+<img width="868" height="34" alt="image" src="https://github.com/user-attachments/assets/294cb97e-7329-434f-b23d-56648f1adb2a" />
+<br>
+
+**Flag:** `rundll32.exe > notepad.exe`
+
+> **Lesson:** Sysmon EventID 8 is one of the clearest signals of process injection in the log. It logs the exact source and target, removing any guesswork. Injecting into notepad.exe is a classic technique — it's a trusted, always-present Windows process that generates no network traffic under normal circumstances, making it an ideal host for a C2 beacon. When hunting injection, always check both the source (what injected) and the target (what's now compromised) — the target process is what your C2 traffic will appear to come from.
+
+</details>
