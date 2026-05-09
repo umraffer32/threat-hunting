@@ -148,7 +148,7 @@ The Domain Controller compromise began at 10:37 PM with the same remote executio
 
 # 🚩 Flag Analysis & Hunting Methodology
  
-## ⚙️ Phase 1: Initial Access & Payload Delivery
+## ⚙️ Phase 1: What was the damage?
  
 <details>
 <summary>Q01 — Target Directory</summary>
@@ -260,6 +260,8 @@ The attacker created a VSS shadow copy (vssadmin create shadow /For=C:) to bypas
 
 </details>
 
+## 🔓 Phase 2: How did data leave?
+
 <details>
 <summary>Q05 — Exfil Tool</summary>
 
@@ -280,8 +282,6 @@ The binary is `rclone.exe`, staged by the attacker in `C:\Users\Public\` — a w
 > **Lesson:** Attackers favor C:\Users\Public\ as a staging directory because any user or process can write there without triggering UAC. When hunting for attacker-dropped tools, always check Public alongside Temp directories. Rclone is a legitimate open-source cloud sync tool, which also means it won't trigger AV on signature alone — defenders need behavioral detection (unusual process making outbound connections to cloud storage) rather than relying on file reputation.
 
 </details>
-
-## 🔓 Phase 2: Privilege Escalation & C2 Establishment
 
 <details>
 <summary>Q06 — Exfil Destination IP</summary>
@@ -378,6 +378,8 @@ The domain in the URL is the attacker's staging server.
 
 </details>
 
+## 🔓 Phase 3: Where did it all start?
+
 <details>
 <summary>Q10 — Malicious File</summary>
 
@@ -417,5 +419,24 @@ rundll32 loading a DLL named "review" from the D:\ drive. That's the payload.
 **Flag:** `review.dll`
 
 > **Lesson:** When the Computer filter returns nothing but you know the host is in scope, drop it and add the Computer column to the project instead — you'll see what hostnames are actually in the data and can adjust. Also: `!contains` doesn't accept a list of values. Each exclusion needs its own `where` clause, or use `| where not (Image_s has_any ("splunk", "rundll32"))`. The hunt for initial access always comes back to LOLBins loading files from unusual paths — a DLL called "review" on a D:\ drive has no legitimate business being there.
+
+</details>
+
+<details>
+<summary>Q11 — Delivery Vector</summary>
+
+**Goal:** Identify the drive letter the malicious file was loaded from.
+
+**Approach:** No additional query needed. The answer was visible in Q10's results. The rundll32 command captured at 10:43:35 PM showed the full file path:
+
+```
+rundll32.exe D:\review.dll,StartW
+```
+
+The file loaded from the D:\ drive — not the C:\ system drive. This is significant because files on mounted ISO images bypass the Mark of the Web (MotW) security control. When a user downloads a file from the internet, Windows tags it with a Zone.Identifier alternate data stream. Executables with this tag trigger SmartScreen warnings on launch. Files on a mounted ISO have no such tag — they execute silently.
+
+**Flag:** `D:`
+
+> **Lesson:** ISO delivery is a well-established MotW bypass. When a user mounts a .iso file and runs something inside it, Windows treats the contents as if they came from a local disk — no internet zone tag, no SmartScreen prompt, no warning dialog. Defenders hunting this technique should look for processes loading executables or DLLs from drive letters other than C:\ (D:\, E:\, etc.) on endpoints where removable media or virtual disk mounting isn't expected.
 
 </details>
