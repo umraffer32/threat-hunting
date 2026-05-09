@@ -595,19 +595,17 @@ One result: `C:\Users\Public\update.exe` created at 10:43:13 PM — 22 seconds b
 
 **Goal:** Identify the command and control domain that update.exe beaconed to.
 
-**Approach:** DNS query events (Sysmon EventID 22) capture every domain lookup made by a process. Reused the Q15 query structure and swapped the EventID filter to 22, then looked for DNS queries associated with update.exe.
+**Approach:** DNS query events (Sysmon EventID 22) capture every domain lookup made by a process. Reused the Q15 query structure and swapped the EventID filter to 22, then looked for DNS queries.
 
 ```kql
 EmberForgeX_CL
 | where TimeGenerated >= datetime(2026-02-10T22:43:00)
 | where TimeGenerated <= datetime(2026-02-10T23:59:00)
 | where EventID_s == 22
-| where Image_s has "update.exe"
-| project TimeGenerated, Computer, Image_s, QueryName_s
 | order by TimeGenerated asc
 ```
 
-<img width="783" height="91" alt="image" src="https://github.com/user-attachments/assets/3ab4ed4f-341f-40cb-b13f-eac9cd2903d7" />
+<img width="1191" height="39" alt="image" src="https://github.com/user-attachments/assets/23b1361d-418d-4955-b151-6f5af74491f9" />
 <br>
 
 The results surfaced DNS lookups from update.exe to `cdn.cloud-endpoint.net` — a domain crafted to blend in with legitimate cloud infrastructure traffic.
@@ -617,3 +615,4 @@ The results surfaced DNS lookups from update.exe to `cdn.cloud-endpoint.net` —
 > **Lesson:** Sysmon EventID 22 (DNS Query) is one of the highest-value events for C2 detection. It ties a domain lookup directly to the process that made it — no guessing which process was responsible. Attackers frequently use domain names that mimic legitimate services (cloud-endpoint, cdn, sync, update) to blend into normal network traffic. Once you have the process name from a prior question, pivoting to its DNS activity takes one filter change.
 
 </details>
+
