@@ -440,3 +440,30 @@ The file loaded from the D:\ drive — not the C:\ system drive. This is signifi
 > **Lesson:** ISO delivery is a well-established MotW bypass. When a user mounts a .iso file and runs something inside it, Windows treats the contents as if they came from a local disk — no internet zone tag, no SmartScreen prompt, no warning dialog. Defenders hunting this technique should look for processes loading executables or DLLs from drive letters other than C:\ (D:\, E:\, etc.) on endpoints where removable media or virtual disk mounting isn't expected.
 
 </details>
+
+<details>
+<summary>Q12 — Compromised User</summary>
+
+**Goal:** Identify the user account that executed the malicious file.
+
+**Approach:** The rundll32 command loading review.dll was already in scope from Q10. Pivoted to the user context on that event by projecting the user fields alongside the command line.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "review.dll"
+| project TimeGenerated, User_s, Caller_User_Name_s, Computer
+```
+
+The User_s field returned `lmartin` — Lisa Martin's domain account. Patient zero confirmed.
+<br>
+
+<img width="862" height="64" alt="image" src="https://github.com/user-attachments/assets/c3f04998-b32c-458c-b22a-1a0546814d92" />
+<br>
+
+**Flag:** `lmartin`
+
+> **Lesson:** Always project user context fields alongside command line data. Knowing the process isn't enough — you need to know who owned it. In Sysmon logs, user context typically lives in User_s or SubjectUserName_s depending on the event type. When the account name surfaces, it becomes the pivot point for every downstream question: what else did this account do, what did it have access to, and when was it first compromised.
+
+</details>
