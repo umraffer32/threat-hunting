@@ -494,3 +494,66 @@ The ParentImage_s field returned `C:\Windows\explorer.exe` — Lisa double-click
 > **Lesson:** explorer.exe as a parent process is the tell for user-initiated execution — it means someone double-clicked something. The full chain matters because it tells you the delivery mechanism at a glance: user interaction (explorer) spawned a LOLBin (rundll32) which loaded a malicious module (review.dll). Each link in the chain has detection value — alerting on rundll32 loading DLLs from non-system paths would have caught this at the execution stage.
 
 </details>
+
+<details>
+<summary>Q14 — Delivery Unpacking</summary>
+
+**Goal:** Identify the tool and extraction path used to unpack the malicious archive before the payload executed.
+
+**Approach:** The DLL had to come from somewhere before rundll32 loaded it. A compression tool must have extracted an archive onto the workstation prior to 10:43 PM. Searched for common extraction tools first.
+
+### Attempt 1 — Search by command line keywords
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Computer has "B9GHH06"
+| where CommandLine_s has_any ("extract", "expand", "7z", "winrar", "tar", "Expand-Archive")
+| project TimeGenerated, Image_s, CommandLine_s
+| order by TimeGenerated asc
+```
+
+Nothing returned. Tried again filtering by Image_s for archive tools — also nothing. The Computer filter was the culprit again, silently dropping results even with correct syntax.
+
+### Attempt 2 — Search by image name, no computer filter
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Image_s has_any ("7z", "winrar", "WinZip", "tar", "extract")
+| project TimeGenerated, Computer, Image_s, CommandLine_s
+| order by TimeGenerated asc
+```
+
+Still nothing — has_any on Image_s wasn't matching the full path format.
+
+### Attempt 3 — Narrow time window before the DLL executed
+
+Pivoted to a tight time window just before the rundll32 execution at 10:43:35 PM, looking at all process creation events:
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "Users" and CommandLine_s has "lmartin"
+| project TimeGenerated, Computer, Image_s, CommandLine_s
+| order by TimeGenerated asc
+```
+
+First row surfaced the answer:
+<img width="1446" height="62" alt="image" src="https://github.com/user-attachments/assets/446f894f-9691-41b3-adf5-cdefe86b5ef7" />
+<br>
+
+```
+"C:\Program Files\7-Zip\7zG.exe" x -o"C:\Users\lmartin.EMBERFORGE\Downloads\EmberForge_Review\" -spe -an -ai#7zMap13315:120:7zEvent17197
+```
+
+7-Zip's GUI binary (`7zG.exe`) extracting an archive into the user's Downloads folder under a directory named EmberForge_Review. The `-o` flag is 7-Zip's output directory argument — the path after it is exactly where the contents landed.
+
+**Flag:** `7zG.exe > C:\Users\lmartin.EMBERFORGE\Downloads\EmberForge_Review`
+
+> **Lesson:** When keyword and image-name filters keep returning nothing, anchor to time instead. Knowing when the payload executed (10:43:35 PM) gives you a hard ceiling — whatever extracted the archive had to run before that. A narrow time window query against all process creation events cuts through schema quirks and filter failures. The delivery chain is almost always visible in the 2—3 minutes before the first malicious execution.
+
+</details>
