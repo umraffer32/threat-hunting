@@ -467,3 +467,30 @@ The User_s field returned `lmartin` — Lisa Martin's domain account. Patient ze
 > **Lesson:** Always project user context fields alongside command line data. Knowing the process isn't enough — you need to know who owned it. In Sysmon logs, user context typically lives in User_s or SubjectUserName_s depending on the event type. When the account name surfaces, it becomes the pivot point for every downstream question: what else did this account do, what did it have access to, and when was it first compromised.
 
 </details>
+
+<details>
+<summary>Q13 — Execution Chain</summary>
+
+**Goal:** Identify the full process execution chain that led to the malicious payload running.
+
+**Approach:** From Q10 we had the rundll32 command. Now needed to trace what launched it. Added ParentImage_s to the project to expose the parent process. The Computer filter continued to return nothing, so ran without it and let the Computer column surface naturally.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "review.dll"
+| project TimeGenerated, Image_s, CommandLine_s, ParentImage_s, ParentCommandLine_s
+```
+
+The ParentImage_s field returned `C:\Windows\explorer.exe` — Lisa double-clicked the file, spawning rundll32, which loaded the DLL payload.
+<br>
+
+<img width="1193" height="65" alt="image" src="https://github.com/user-attachments/assets/109337e0-c0ee-4352-b3ab-25e420b653ea" />
+<br>
+
+**Flag:** `explorer.exe > rundll32.exe > review.dll`
+
+> **Lesson:** explorer.exe as a parent process is the tell for user-initiated execution — it means someone double-clicked something. The full chain matters because it tells you the delivery mechanism at a glance: user interaction (explorer) spawned a LOLBin (rundll32) which loaded a malicious module (review.dll). Each link in the chain has detection value — alerting on rundll32 loading DLLs from non-system paths would have caught this at the execution stage.
+
+</details>
