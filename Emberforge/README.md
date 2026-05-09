@@ -557,3 +557,35 @@ First row surfaced the answer:
 > **Lesson:** When keyword and image-name filters keep returning nothing, anchor to time instead. Knowing when the payload executed (10:43:35 PM) gives you a hard ceiling — whatever extracted the archive had to run before that. A narrow time window query against all process creation events cuts through schema quirks and filter failures. The delivery chain is almost always visible in the 2—3 minutes before the first malicious execution.
 
 </details>
+
+## 🎯 Phase 4: What ran on the workstation?
+
+<details>
+<summary>Q15 — Dropped Payload</summary>
+
+**Goal:** Identify the executable dropped onto the workstation after the DLL executed.
+
+**Approach:** After rundll32 loaded review.dll, the DLL's first job was likely to drop the next stage tool. Searched for file creation events (Sysmon EventID 11) anchored to world-writable directories after the 10:43 PM execution.
+
+Initial attempts used `EventID == 11` which returned nothing — the table uses string format (`EventID_s`) for EventID fields, not integer. Confirmed via getschema. Multiple queries filtering for .exe files in common directories also returned noise (7-Zip installer artifacts, Zone.Identifier entries). Pivoted to filtering directly on C:\Users\Public\ since rclone was already known to stage there from Q02.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10T22:43:00)
+| where TimeGenerated <= datetime(2026-02-10T23:59:00)
+| where EventID_s == 11
+| where TargetFilename_s has "Users\\Public"
+| project TimeGenerated, Computer, TargetFilename_s
+| order by TimeGenerated asc
+```
+
+<img width="650" height="40" alt="image" src="https://github.com/user-attachments/assets/a0043213-9050-4912-bfc2-67018d23b2c7" />
+<br>
+
+One result: `C:\Users\Public\update.exe` created at 10:43:13 PM — 22 seconds before the rundll32 execution at 10:43:35 PM. The DLL dropped the next stage tool before being invoked.
+
+**Flag:** `C:\Users\Public\update.exe`
+
+> **Lesson:** Sysmon EventID 11 (FileCreate) is the fastest way to catch dropped payloads. When the field uses string format (`EventID_s`), integer comparisons silently fail — always verify the schema before hunting. Anchoring the search to world-writable directories (C:\Users\Public\, C:\Windows\Temp\, C:\ProgramData\) rather than scanning all file creation events cuts the noise dramatically. Attackers almost always stage tools in these directories because no elevated privileges are needed to write there.
+
+</details>
