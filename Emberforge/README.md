@@ -259,3 +259,48 @@ The attacker created a VSS shadow copy (vssadmin create shadow /For=C:) to bypas
 > **Lesson:** NTDS.dit is the crown jewel of domain compromise. It's locked while the Domain Controller is running, but VSS shadow copies bypass this protection. The extraction pattern is distinctive: vssadmin creates the copy, then a copy command reads from \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy* path. When you see this pattern, you're looking at a domain-wide credential theft in progress.
 
 </details>
+
+<details>
+<summary>Q05 — Evidence Source Selection</summary>
+
+**Goal:** Identify the correct telemetry source to determine if the exposed public IP was scanned or enumerated.
+
+**Approach:** This is a conceptual question about choosing the right data source. The scenario is that a VM's public IP was exposed. To detect scanning/enumeration activity, you need network-layer events — inbound connection attempts, port probes, and reconnaissance traffic. This rules out application-layer logs (event logs, browser history), identity-layer logs (sign-in logs), and inventory systems (MDE device lists). Only network telemetry captures the initial knock on the door.
+
+The correct table for this is `DeviceNetworkEvents` — Sysmon's network connection logging. This logs `ConnectionAttempt`, `InboundConnectionAccepted`, and other connection state changes at the network plane, which is exactly what you need to detect scanning and enumeration activity against a public-facing asset.
+
+**Flag:** `DeviceNetworkEvents`
+
+> **Lesson:** Pick telemetry by the layer of activity you're hunting. Authentication attempts live in logon events. Process execution lives in process creation tables. File access lives in file event logs. But if you're hunting "did anyone knock on the door," that's a network-layer question answered only by network tables. When the hypothesis is "exposure was discovered," the network table is always the first stop — successful auth and post-exploitation only matter once you've confirmed someone was looking.
+
+</details>
+
+## 🔓 Phase 2: Privilege Escalation & C2 Establishment
+
+<details>
+<summary>Q06 — Exfil Destination IP</summary>
+
+**Goal:** Identify the IP address that received the exfiltrated data.
+
+**Approach:** From Q02, rclone was the exfil tool. Sysmon Event ID 3 logs network connections and includes the destination IP. Filter to rclone's process image and pull the destination IP from those connection events.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where EventID_s == 3
+| where Image_s has "rclone"
+| project TimeGenerated, Image_s, DestinationIp_s, DestinationPort_s
+```
+
+The query returned rclone's outbound connection, revealing the destination IP for the Mega cloud storage upload.
+<br>
+
+<img width="766" height="106" alt="image" src="https://github.com/user-attachments/assets/2cd76921-0c2b-49e7-8c71-0765d0e8bcb4" />
+<br>
+
+**Flag:** `66.203.125.15`
+
+> **Lesson:** Sysmon Event ID 3 (Network Connection) is the fastest path to exfil destination IPs. Once you know the tool, pivot directly to its network activity — you get the destination IP, port, and timestamp in one query without needing to parse command line arguments.
+
+</details>
