@@ -348,3 +348,32 @@ The cmdlet name is the archive method the lab is asking for.
 > **Lesson:** A single well-scoped query early in the hunt can answer multiple downstream questions. The Q01 query that found the target directory also captured the full command, exposing the archive tool, source path, and destination path in one shot. When you project the full CommandLine_s field rather than just filtering on it, you get everything the attacker typed — not just confirmation that they typed something.
 
 </details>
+
+<details>
+<summary>Q09 — Staging Server</summary>
+
+**Goal:** Identify the external server used to download attacker tools onto the compromised host.
+
+**Approach:** Attackers pulling tools from external infrastructure leave traces in download commands. Searched for common LOLBin and download utilities across the investigation window — certutil, Invoke-WebRequest, curl, wget, and bitsadmin are the usual suspects.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has_any ("Invoke-WebRequest", "wget", "curl", "certutil", "bitsadmin", "downloadstring", "iwr", "http")
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+The results returned a certutil command on the server pulling update.exe from an external URL:
+
+<img width="1442" height="58" alt="image" src="https://github.com/user-attachments/assets/866a9fd6-69a0-4ef3-9316-569e2194ae26" />
+<br>
+
+The domain in the URL is the attacker's staging server.
+
+**Flag:** `sync.cloud-endpoint.net`
+
+> **Lesson:** certutil is one of the most abused LOLBins for file downloads. It's a legitimate Windows certificate utility that happens to support URL caching — making it a built-in download cradle that bypasses application whitelisting. When hunting lateral movement and tool staging, always include certutil in your download-command searches alongside the obvious choices like curl and wget.
+
+</details>
