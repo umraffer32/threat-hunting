@@ -1,7 +1,8 @@
+# 🎮 Threat Hunt Report — EmberForge
+
+
 <img width="1536" height="1024" alt="emberforge" src="https://github.com/user-attachments/assets/90845804-8160-42da-b9e9-60b6c11be065" />
 <br>
-
-# 🎮 Threat Hunt Report — EmberForge
 
 ## Summary
 
