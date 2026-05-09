@@ -377,3 +377,45 @@ The domain in the URL is the attacker's staging server.
 > **Lesson:** certutil is one of the most abused LOLBins for file downloads. It's a legitimate Windows certificate utility that happens to support URL caching — making it a built-in download cradle that bypasses application whitelisting. When hunting lateral movement and tool staging, always include certutil in your download-command searches alongside the obvious choices like curl and wget.
 
 </details>
+
+<details>
+<summary>Q10 — Malicious File</summary>
+
+**Goal:** Identify the malicious file that served as the initial payload on Lisa Martin's workstation.
+
+**Approach:** The question indicated a Windows utility was used to load a suspicious file. Started with broad process creation (EventID 1) on the workstation, filtering for known LOLBins like rundll32, mshta, and regsvr32.
+
+Initial results came back full of Splunk forwarder noise — legitimate system processes drowning out anything suspicious. Attempted to filter them out, but the exclusion syntax was wrong. Using `!contains` with a list doesn't work in KQL — each exclusion needs its own separate `where` clause.
+
+```kql
+| where Image_s !has "splunk"
+| where Image_s !has "rundll32"
+```
+
+Pivoted to searching rundll32 specifically since it appeared in the results, but CommandLine_s came back empty for those rows — a known schema quirk where the field isn't populated on some EventID 1 entries.
+
+Tried filtering by Desktop path and common user profile directories — no results with the Computer filter applied. Dropping the Computer filter and searching for suspicious file extensions across all hosts finally surfaced the answer:
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has_any (".hta", ".lnk", ".dll", ".js", ".vbs", ".scr")
+| where CommandLine_s !has "splunk"
+| project TimeGenerated, Computer, Image_s, CommandLine_s
+| order by TimeGenerated asc
+| take 20
+```
+
+At 10:43:35 PM on the workstation (B9GHH06):
+
+<img width="958" height="57" alt="image" src="https://github.com/user-attachments/assets/e1c73eba-3ed3-41ff-9f49-e4df5f4700b4" />
+<br>
+
+rundll32 loading a DLL named "review" from the D:\ drive. That's the payload.
+
+**Flag:** `review.dll`
+
+> **Lesson:** When the Computer filter returns nothing but you know the host is in scope, drop it and add the Computer column to the project instead — you'll see what hostnames are actually in the data and can adjust. Also: `!contains` doesn't accept a list of values. Each exclusion needs its own `where` clause, or use `| where not (Image_s has_any ("splunk", "rundll32"))`. The hunt for initial access always comes back to LOLBins loading files from unusual paths — a DLL called "review" on a D:\ drive has no legitimate business being there.
+
+</details>
