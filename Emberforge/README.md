@@ -697,6 +697,7 @@ EmberForgeX_CL
 | project TimeGenerated, Computer, Raw_s
 | order by TimeGenerated asc
 ```
+
 <img width="1521" height="263" alt="image" src="https://github.com/user-attachments/assets/1a6c28fe-ad9c-40ea-b323-e0fd50b838e8" />
 <br>
 
@@ -708,3 +709,35 @@ The Raw_s results showed the full chain: `rundll32.exe` spawning `cmd.exe /c fod
 
 </details>
 
+<details>
+<summary>Q20 — Registry Bypass Enabler</summary>
+
+**Goal:** Identify the specific registry value that enabled the UAC bypass redirect.
+
+**Approach:** From Q19, the ms-settings registry key was hijacked. But the hijack requires two registry modifications — one sets the payload path, the other enables the redirect. Narrowed the time window to just before the fodhelper execution and pulled both EventID 13 entries.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10T22:43:00)
+| where TimeGenerated <= datetime(2026-02-10T22:43:15)
+| where EventID_s == 13
+| where TargetObject_s has "ms-settings"
+| project TimeGenerated, TargetObject_s, Details_s
+| order by TimeGenerated asc
+```
+
+Two rows returned:
+
+1. `(Default)` set to `C:\Users\Public\update.exe` — the payload path
+2. `DelegateExecute` set to empty — the redirect enabler
+
+<img width="594" height="157" alt="image" src="https://github.com/user-attachments/assets/422c7786-65ac-47f8-9b73-a09ffa438fef" />
+<br>
+
+Setting DelegateExecute to an empty value tells Windows to use the (Default) command instead of the normal COM delegate handler. Without this second write, the hijack doesn't work.
+
+**Flag:** `DelegateExecute`
+
+> **Lesson:** The fodhelper UAC bypass requires exactly two registry writes to the ms-settings\shell\open\command key. Writing the payload path alone isn't enough — the DelegateExecute value must also be present (even empty) to trigger the redirect behavior. When hunting this technique, look for both values written in close succession. Alerting on either write to ms-settings\shell\open\command is a high-fidelity detection with very low false-positive rate.
+
+</details>
