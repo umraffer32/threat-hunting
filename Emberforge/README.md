@@ -741,3 +741,112 @@ Setting DelegateExecute to an empty value tells Windows to use the (Default) com
 > **Lesson:** The fodhelper UAC bypass requires exactly two registry writes to the ms-settings\shell\open\command key. Writing the payload path alone isn't enough — the DelegateExecute value must also be present (even empty) to trigger the redirect behavior. When hunting this technique, look for both values written in close succession. Alerting on either write to ms-settings\shell\open\command is a high-fidelity detection with very low false-positive rate.
 
 </details>
+
+<details>
+<summary>Q21 — Stable Injection Chain</summary>
+
+**Goal:** Identify the second process injection performed after the UAC bypass, including the target process and its security context.
+
+**Approach:** From Q18, the first injection was `rundll32.exe > notepad.exe` running under `EMBERFORGE\lmartin`. After the UAC bypass, update.exe ran elevated and should have performed a second injection into a SYSTEM-level process. Searched EventID 8 with filters to exclude the first injection.
+
+Initial attempts with SourceImage_s filters for update.exe returned nothing — the parsed field wasn't populating correctly. Tried excluding dwm.exe and rundll32 to isolate other injection pairs, but only the first injection came back. Pivoted to Raw_s to bypass the field-parsing issue:
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Raw_s has "update.exe" and EventID_s == 8
+| project TimeGenerated, Computer, Raw_s
+```
+
+The raw XML revealed the full injection event:
+
+- **SourceImage:** `C:\Users\Public\update.exe`
+- **TargetImage:** `C:\Windows\System32\spoolsv.exe`
+- **TargetUser:** `NT AUTHORITY\SYSTEM`
+
+The elevated update.exe injected into the Print Spooler service, inheriting SYSTEM-level privileges.
+
+**Flag:** `update.exe > spoolsv.exe (NT AUTHORITY\SYSTEM)`
+
+> **Lesson:** When EventID 8 field parsing fails, Raw_s is the fallback. The injection chain tells the full privilege story: lmartin (standard user) → UAC bypass → update.exe (elevated admin) → spoolsv.exe (SYSTEM). Each step up the chain expands what the attacker can do. Spoolsv.exe is a common injection target because it runs as SYSTEM, is always present, and generates legitimate network traffic — making it a natural host for a privileged beacon.
+
+</details>
+
+<details>
+<summary>Q22 — Credential Dumping Process</summary>
+
+**Goal:** Identify the process that dumped LSASS memory.
+
+**Approach:** No additional query needed. The Q21 Raw_s search already surfaced the answer. While looking for the second injection chain, the EventID 11 (FileCreate) query confirmed that update.exe created the LSASS dump file directly.
+
+From the Q21 follow-up query:
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where EventID_s == 11
+| where TargetFilename_s has_any ("lsass", ".dmp", "dump")
+| project TimeGenerated, Computer, Image_s, TargetFilename_s
+| order by TimeGenerated asc
+```
+
+Image_s returned `C:\Users\Public\update.exe` as the process that created the dump. Direct syscalls were used to avoid API-level monitoring — no EventID 10 (ProcessAccess) was generated, only the file creation event.
+
+**Flag:** `update.exe`
+
+> **Lesson:** Traditional LSASS dumping via MiniDumpWriteAll triggers EventID 10 (ProcessAccess) with access rights 0x1FFFFF. Direct syscall implementations bypass this entirely — the only telemetry left is the dump file hitting disk as EventID 11. When hunting credential dumping, always check FileCreate for .dmp files in addition to ProcessAccess events. The absence of EventID 10 is itself a signal that a more sophisticated technique was used.
+
+</details>
+
+<details>
+<summary>Q23 — Dump Location</summary>
+
+**Goal:** Identify the full path where the LSASS dump file was written.
+
+**Approach:** No additional query needed. The TargetFilename_s field from the Q22 FileCreate query returned the full path directly.
+
+From the Q22 results:
+
+```
+C:\Windows\System32\lsass.dmp
+```
+
+Staging the dump in System32 is a deliberate choice — it blends in with legitimate Windows files in a directory that contains hundreds of system binaries and DLLs. A cursory directory listing wouldn't stand out.
+
+**Flag:** `C:\Windows\System32\lsass.dmp`
+
+> **Lesson:** Attackers don't always stage dumps in obvious locations like C:\Users\Public\ or C:\Windows\Temp\. Dropping lsass.dmp inside System32 is a camouflage technique — the directory is noisy with legitimate files. When hunting for credential dumps, search by filename and extension (.dmp, lsass) across all paths, not just the obvious staging directories.
+
+</details>
+
+## 🔍 Phase 6: What did they enumerate?
+
+<details>
+<summary>Q24 — User Enumeration</summary>
+
+**Goal:** Identify the command used to enumerate domain user accounts.
+
+**Approach:** After gaining SYSTEM-level access, the attacker needed to understand the domain structure. Searched for net commands targeting domain user accounts.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "net" and CommandLine_s has "user" and CommandLine_s has "domain"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="1198" height="256" alt="image" src="https://github.com/user-attachments/assets/802f7a67-1f36-4d29-967b-138721352c77" />
+<br>
+
+On the workstation at 10:43:17 PM, `net user /domain` executed — querying the full list of domain user accounts from the Domain Controller.
+
+**Flag:** `net user /domain`
+
+> **Lesson:** net user /domain is one of the most reliable early-stage discovery signals. It's a single command that dumps every account in the domain — names, groups, and account states. In a threat hunt, discovery commands like this clustered in a short time window are a strong indicator of post-exploitation enumeration. The attacker is building a target list for credential reuse and lateral movement.
+
+</details>
+
