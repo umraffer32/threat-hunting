@@ -665,3 +665,46 @@ The first row on the workstation at 10:43:22 PM showed rundll32.exe injecting in
 > **Lesson:** Sysmon EventID 8 is one of the clearest signals of process injection in the log. It logs the exact source and target, removing any guesswork. Injecting into notepad.exe is a classic technique — it's a trusted, always-present Windows process that generates no network traffic under normal circumstances, making it an ideal host for a C2 beacon. When hunting injection, always check both the source (what injected) and the target (what's now compromised) — the target process is what your C2 traffic will appear to come from.
 
 </details>
+
+## 🔓 Phase 5: How did they elevate?
+
+<details>
+<summary>Q19 — UAC Bypass Binary</summary>
+
+**Goal:** Identify the Windows binary used to bypass UAC and execute the payload with elevated privileges.
+
+**Approach:** The registry modification to the ms-settings key (TargetObject_s) pointed to a UAC bypass via a trusted auto-elevating binary. Searched EventID 13 (registry value set) for the hijacked key first to confirm the technique, then tried to find the binary execution.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where EventID_s == 13
+| where TargetObject_s has "ms-settings" or TargetObject_s has "mscfile"
+| project TimeGenerated, Computer, Image_s, TargetObject_s, Details_s
+| order by TimeGenerated asc
+```
+
+Confirmed the ms-settings\shell\open\command registry key was set to `C:\Users\Public\update.exe`. The binary that reads this key and auto-elevates is fodhelper.exe. Tried to confirm the execution directly with EventID 1 and Image_s filter — no hits. Widened the window and searched CommandLine_s for fodhelper — also no hits.
+
+Pivoted to Raw_s as a last resort:
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Raw_s has "fodhelper"
+| project TimeGenerated, Computer, Raw_s
+| order by TimeGenerated asc
+```
+<img width="1521" height="263" alt="image" src="https://github.com/user-attachments/assets/1a6c28fe-ad9c-40ea-b323-e0fd50b838e8" />
+<br>
+
+The Raw_s results showed the full chain: `rundll32.exe` spawning `cmd.exe /c fodhelper.exe`, confirming execution. fodhelper read the hijacked registry key and launched update.exe with elevated privileges — no UAC prompt shown to the user.
+
+**Flag:** `fodhelper.exe`
+
+> **Lesson:** When Image_s and CommandLine_s filters return nothing for a known process, fall back to Raw_s. The raw Sysmon XML contains every field, including ones that don't parse into named columns. fodhelper.exe is one of the most well-known UAC bypass binaries — it's a legitimate Windows 10+ feature accessibility helper that auto-elevates without prompting. The attack pattern is: write malicious path into ms-settings registry key, then invoke fodhelper. Windows does the elevation for you.
+
+</details>
+
