@@ -1056,3 +1056,99 @@ certutil pulled update.exe directly from the attacker's staging server before th
 
 </details>
 
+<details>
+<summary>Q32 — Remote Execution Evidence</summary>
+
+**Goal:** Identify the random service name created on the server for remote execution.
+
+**Approach:** Remote execution via service creation (PsExec-style) generates Windows EventID 7045. Standard field filters returned nothing — EventID_s == "7045" was empty, and Raw_s has "7045" matched EventRecordID values instead. The correct pattern was to match the XML tag value directly.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Raw_s has ">7045<"
+| where Computer has "16V3AU4"
+| extend ServiceName = extract("ServiceName'>([^<]+)", 1, Raw_s)
+| project TimeGenerated, Computer, ServiceName
+| order by TimeGenerated asc
+```
+
+<img width="546" height="396" alt="image" src="https://github.com/user-attachments/assets/f5b63b57-544e-4dc3-a25d-19b30aaa20b2" />
+<br>
+
+Multiple random service names came back across the server and DC. Three were visible on the server: `pGJLIKnC`, `QjhJMWqS`, and `MzLbIBFm`. All three were submitted and rejected — the font was rendering uppercase I and uppercase L identically, making it impossible to distinguish by eye.
+
+**Failed Submissions:**
+- `MzLbIBFm` — Rejected
+- `pGJLlKnC` — Rejected (lowercase L misread)
+- `QjhJMWqS` — Rejected
+
+Resolution: copy-pasted the service name directly from the Sentinel Raw_s output rather than typing it from the extract column. The actual character was uppercase I, not lowercase l.
+
+**Flag:** `pGJLIKnC`
+
+> **Lesson:** Random service names are a PsExec/Impacket execution signature — they're created, used, and deleted in seconds, but the EventID 7045 log entry persists. The correct search pattern is `Raw_s has ">7045<"` to match the XML tag, not EventID_s which may not be populated. On case-sensitive flags with random alphanumeric strings, always copy-paste directly from the raw source. Monospace fonts make uppercase I and lowercase l visually identical — your eyes will lie to you every time.
+
+</details>
+
+<details>
+<summary>Q33 — First Command on Server</summary>
+
+**Goal:** Identify the first attacker discovery command run after landing on the server.
+
+**Approach:** After the service-based remote execution established a foothold, the attacker ran discovery commands. Searched for the earliest process creation events on the server after tool staging completed, excluding noise from certutil, PowerShell staging, and batch file execution.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10T22:41:28)
+| where TimeGenerated <= datetime(2026-02-10T22:43:00)
+| where Computer has "16V3AU4"
+| where EventID_s == 1
+| where CommandLine_s !has "splunk" and CommandLine_s !has "certutil" and CommandLine_s !has "powershell" and CommandLine_s !has ".bat"
+| project TimeGenerated, CommandLine_s
+| order by TimeGenerated asc
+| take 10
+```
+
+<img width="546" height="177" alt="image" src="https://github.com/user-attachments/assets/9ce0a88c-1419-4c31-847b-16c3099bcf19" />
+<br>
+
+Two commands appeared in quick succession: `hostname` at 10:41:46 PM and `whoami` at 10:41:48 PM.
+
+**Failed Submissions:**
+- `hostname` — Rejected. Chronologically first, but not the answer the lab was looking for.
+
+**Flag:** `whoami`
+
+> **Lesson:** `whoami` is the universally recognized "first command on a new host" in threat hunting literature, even when `hostname` technically fires first. This is a reminder that labs sometimes test convention over chronological fact. Both commands together are a high-confidence lateral movement signal — seeing `hostname` and `whoami` fired within 2 seconds of each other from a service parent process is a reliable indicator that an attacker just landed on a new host.
+
+</details>
+
+<details>
+<summary>Q34 — Failed Lateral Movement</summary>
+
+**Goal:** Identify the authentication protocol used in failed logon attempts against the server.
+
+**Approach:** Failed logon events (Windows EventID 4625) on the server from the workstation IP would reveal the protocol used for the credential spraying attempts. The standard EventID field didn't match — used the Raw_s XML tag pattern and added the Security-Auditing provider filter to avoid false matches on Sysmon events.
+
+Initial query returned Sysmon network connection events (EventID 3) with port 443 — those weren't the logon failures. Added the Security-Auditing filter to isolate Windows Security Event Log entries.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Raw_s has ">4625<" and Raw_s has "Security-Auditing"
+| where Computer has "16V3AU4"
+| project TimeGenerated, Raw_s
+| take 1
+```
+
+The raw XML showed `AuthenticationPackageName'>NTLM` with the source IP confirmed as `10.1.173.145` — the workstation. The attacker was spraying stolen credentials against the server using NTLM authentication.
+
+**Flag:** `NTLM`
+
+> **Lesson:** EventID 4625 (failed logon) lives in the Windows Security Event Log, not Sysmon — so it comes in through a different provider. When Raw_s searches return unexpected hits, filter by `Raw_s has "Security-Auditing"` to isolate Security Event Log entries from Sysmon entries. The `AuthenticationPackageName` field in EventID 4625 is the protocol fingerprint — NTLM indicates credential spraying or Pass-the-Hash attempts, while Kerberos indicates ticket-based attacks.
+
+</details>
+
