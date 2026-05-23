@@ -39,17 +39,19 @@ On January 30, 2026, unreleased source code for EmberForge Studios' upcoming tit
 
 | Hostname | IP Address | Role | OS |
 |----------|-----------|------|-----|
-| EC2AMAZ-B9GHH06 | 10.1.173.145 | Workstation (Initial Access) | Windows |
+| EC2AMAZ-B9GHHO6 | 10.1.173.145 | Workstation (Initial Access) | Windows |
 | EC2AMAZ-16V3AU4 | 10.1.57.66 | Server (Lateral Movement) | Windows |
 | EC2AMAZ-EEU3IA2 | 10.1.100.76 | Domain Controller | Windows |
 
 **Investigation Methodology:** Backwards hunt — started with the damage (exfiltrated data, compromised accounts) and traced back through the attack chain to initial access point. Each question built the complete narrative of attacker actions.
 
+**⏱️ Time Field Convention:** Events occurred on **January 30–31, 2026** (per Sysmon `SystemTime` inside the `Raw_s` event XML). Logs were ingested into Sentinel on **February 10, 2026**, which is why every KQL block filters `TimeGenerated >= datetime(2026-02-10)`. All `TimeGenerated` clock values shown in Q-block narratives (e.g., "10:43:35 PM") are **ingestion times** in UTC, and **do not** correspond 1:1 to the event-occurrence wall clock. Where chronological ordering of attacker actions matters, the SystemTime ordering is called out explicitly.
+
 ---
 
 ## 📋 Hunt Overview
  
-The intrusion unfolded in six phases over the 3-hour investigation window. Initial access occurred at 10:38 PM when a malicious DLL was delivered on a mounted ISO, disguised as a project review file. Lisa Martin executed the payload via rundll32, loading review.dll from the D:\ drive to bypass the Mark of the Web security control. Within minutes, the attacker injected the payload into notepad.exe and hijacked the ms-settings registry key to enable a UAC bypass through fodhelper.exe. The compromised process was then elevated to SYSTEM privilege via injection into spoolsv.exe, and update.exe established a command & control beacon to sync.cloud-endpoint.net.
+The intrusion unfolded in six phases over the 3-hour investigation window. Initial access occurred at 10:38 PM when a malicious DLL was delivered on a mounted ISO, disguised as a project review file. Lisa Martin executed the payload via rundll32, loading review.dll from the D:\ drive to bypass the Mark of the Web security control. Within minutes, the attacker injected the payload into notepad.exe and hijacked the ms-settings registry key to enable a UAC bypass through fodhelper.exe. The compromised process was then elevated to SYSTEM privilege via injection into spoolsv.exe, and update.exe established a command & control beacon to cdn.cloud-endpoint.net. (A separate domain, sync.cloud-endpoint.net, was used as the **staging server** for payload downloads via certutil — not C2.)
  
 Data collection began immediately. The attacker compressed the source code from C:\GameDev into gamedev.zip in the C:\Users\Public\ directory for staging. LSASS memory was dumped to C:\Windows\System32\lsass.dmp using direct syscalls to avoid detection, and credentials were exfiltrated via rclone to Mega cloud storage under the account jwilson.vhr@proton.me. During this same period, the attacker enumerated the domain structure, identifying domain users with net user /domain, enumerating the Domain Admins group, and locating the Domain Controller via nltest /dclist. A network share was created (net share tools=C:\Users\Public) to serve as a staging point for lateral movement tools, and a firewall rule was added to permit SMB traffic.
  
@@ -64,30 +66,35 @@ The Domain Controller compromise began at 10:37 PM with the same remote executio
 
 | Tactic | Technique ID | Technique Name | Description |
 |--------|-------------|----------------|-------------|
-| 🚀 Initial Access | T1566.002 | Phishing: Spearphishing Attachment | Malicious DLL disguised as project review file |
+| 🚀 Initial Access | T1566.001 | Phishing: Spearphishing Attachment | Malicious DLL disguised as project review file |
 | ⚡ Execution | T1059.001 | Command and Scripting Interpreter: PowerShell | Compress-Archive for data packaging |
-| ⚡ Execution | T1129 | Shared Module Injection | rundll32 execution of malicious DLL (review.dll) |
+| ⚡ Execution | T1218.011 | System Binary Proxy Execution: Rundll32 | rundll32 execution of malicious DLL (review.dll) |
+| ⚡ Execution | T1129 | Shared Modules | DLL loaded into rundll32 process |
 | ⚡ Execution | T1106 | Native API | Direct syscalls for LSASS memory dump |
-| 🔐 Persistence | T1098.002 | Account Manipulation | Added svc_backup account to Domain Admins group |
-| 🔐 Persistence | T1547.015 | Boot or Logon Initialization Scripts | Backdoor account for persistent future access |
-| 🔓 Privilege Escalation | T1548.002 | Abuse Elevation Control Mechanism | UAC bypass via ms-settings registry hijacking |
-| 🔓 Privilege Escalation | T1134.003 | Process Injection | Injected into notepad.exe and spoolsv.exe |
-| 🎭 Defense Evasion | T1140 | Deobfuscation/Decode Files | Mounted ISO to bypass Mark of the Web |
-| 🎭 Defense Evasion | T1027 | Obfuscated Files or Information | Random service names (pGJLIKnC, MzLbIBFm, QjhJMWqS) |
-| 🎭 Defense Evasion | T1562.001 | Impair Defenses | Added firewall rule to permit SMB traffic |
-| 🔑 Credential Access | T1110.004 | Brute Force: Credential Stuffing | Password spray via NTLM (failed logons on server) |
-| 🔑 Credential Access | T1003.003 | Credential Dumping: NTDS | Extracted NTDS.dit via VSS shadow copy |
-| 🔑 Credential Access | T1003.001 | Credential Dumping: LSASS | Dumped LSASS memory to lsass.dmp file |
-| 🔎 Discovery | T1087.002 | Account Discovery | net user /domain enumeration |
-| 🔎 Discovery | T1087.002 | Account Discovery | net group "Domain Admins" /domain enumeration |
-| 🔎 Discovery | T1518 | Software Discovery | nltest /dclist to locate domain controller |
-| 🔎 Discovery | T1057 | Process Discovery | tasklist enumeration on target systems |
-| ➡️ Lateral Movement | T1570 | Lateral Tool Transfer | Copied rclone and update.exe via admin share |
-| ➡️ Lateral Movement | T1021.002 | Remote Services: SMB/Windows Admin Shares | Leveraged C$ admin shares for tool deployment |
-| 📤 Exfiltration | T1020.001 | Data Transfer Over Alternative Protocol | rclone to Mega cloud storage (mega.nz) |
-| 📤 Exfiltration | T1030 | Data Transfer Size Limits | Exfiltrated in single gamedev.zip archive |
-| 📡 Command & Control | T1071.001 | Application Layer Protocol: Web Protocols | DNS queries to C2 domain (sync.cloud-endpoint.net) |
-| 📡 Command & Control | T1568.003 | Dynamic Resolution: Domain Generation Algorithms | DNS-based C2 communication |
+| 🔐 Persistence | T1136.002 | Create Account: Domain Account | Created svc_backup domain account |
+| 🔐 Persistence | T1098.007 | Account Manipulation: Additional Local or Domain Groups | Added svc_backup to Domain Admins |
+| 🔐 Persistence | T1053.005 | Scheduled Task/Job: Scheduled Task | `schtasks /create /tn WindowsUpdate ... /sc onstart /ru system` |
+| 🔐 Persistence | T1219 | Remote Access Software | AnyDesk installed with unattended-access password hash |
+| 🔓 Privilege Escalation | T1548.002 | Abuse Elevation Control Mechanism: Bypass User Account Control | UAC bypass via ms-settings registry hijacking + fodhelper |
+| 🔓 Privilege Escalation | T1055 | Process Injection | Injected update.exe payload into notepad.exe and spoolsv.exe |
+| 🎭 Defense Evasion | T1553.005 | Subvert Trust Controls: Mark-of-the-Web Bypass | Mounted ISO/D:\ container to bypass MOTW on review.dll |
+| 🎭 Defense Evasion | T1112 | Modify Registry | `HKU\...\ms-settings\shell\open\command\(Default)` + `DelegateExecute` |
+| 🎭 Defense Evasion | T1036 | Masquerading | Service names `pGJLIKnC`, `MzLblBFm`, `QjhJMWqS`; "WindowsUpdate" scheduled task |
+| 🎭 Defense Evasion | T1562.004 | Impair Defenses: Disable or Modify System Firewall | netsh advfirewall rule permitting inbound SMB |
+| 🎭 Defense Evasion | T1070.001 | Indicator Removal: Clear Windows Event Logs | `wevtutil cl Security` and `wevtutil cl System` on DC |
+| 🔑 Credential Access | T1110.003 | Brute Force: Password Spraying | NTLM failed logons (10.1.173.145 → 10.1.57.66) |
+| 🔑 Credential Access | T1003.003 | OS Credential Dumping: NTDS | Extracted ntds.dit via VSS shadow copy |
+| 🔑 Credential Access | T1003.001 | OS Credential Dumping: LSASS Memory | Dumped LSASS to `C:\Windows\System32\lsass.dmp` |
+| 🔎 Discovery | T1087.002 | Account Discovery: Domain Account | `net user /domain` |
+| 🔎 Discovery | T1069.002 | Permission Groups Discovery: Domain Groups | `net group "Domain Admins" /domain` |
+| 🔎 Discovery | T1018 | Remote System Discovery | `nltest /dclist:emberforge.local` |
+| 🔎 Discovery | T1135 | Network Share Discovery | `net share` enumeration |
+| ➡️ Lateral Movement | T1570 | Lateral Tool Transfer | Copied update.exe via admin share + certutil download |
+| ➡️ Lateral Movement | T1021.002 | Remote Services: SMB/Windows Admin Shares | Leveraged `\\10.1.57.66\C$` admin share |
+| 📤 Exfiltration | T1567.002 | Exfiltration Over Web Service: Cloud Storage | rclone → Mega (mega.nz) |
+| 📤 Exfiltration | T1560.001 | Archive Collected Data: Archive via Utility | `Compress-Archive` into gamedev.zip |
+| 📡 Command & Control | T1071.004 | Application Layer Protocol: DNS | DNS queries to cdn.cloud-endpoint.net from update.exe |
+| 📡 Command & Control | T1105 | Ingress Tool Transfer | certutil download of update.exe from sync.cloud-endpoint.net:8080 |
 
 ---
 
@@ -100,7 +107,7 @@ The Domain Controller compromise began at 10:37 PM with the same remote executio
 | 3️⃣ Delivery | ISO file delivered to Lisa Martin disguised as project review document | File creation at 10:38 PM, named to appear legitimate |
 | 4️⃣ Exploitation | Payload executed via rundll32, exploiting trust in legitimate Windows utilities | rundll32.exe D:\review.dll,StartW process execution |
 | 5️⃣ Installation | Malicious code injected into notepad.exe for persistence and hiding | CreateRemoteThread event into notepad.exe process |
-| 6️⃣ Command & Control | Beacon established to external C2 infrastructure | DNS queries to sync.cloud-endpoint.net, C2 IP 104.21.30.237 |
+| 6️⃣ Command & Control | Beacon established to external C2 infrastructure | DNS queries to cdn.cloud-endpoint.net (resolved to 104.21.30.237) |
 | 7️⃣ Actions on Objectives | Data theft, credential dumping, lateral movement, persistence | gamedev.zip exfiltration, LSASS/NTDS dumps, backdoor account creation |
  
 ---
@@ -121,12 +128,13 @@ The Domain Controller compromise began at 10:37 PM with the same remote executio
 - vssadmin.exe → ntds.dit extraction
 
 **Network Indicators:**
-- C2 Domain: sync.cloud-endpoint.net (104.21.30.237)
-- C2 Port: 443 (HTTPS)
-- Exfil Service: mega.nz
+- C2 Domain: cdn.cloud-endpoint.net (resolved to 104.21.30.237, 172.67.174.46)
+- C2 Channel: DNS (Sysmon EventID 22 from update.exe)
+- Staging Domain: sync.cloud-endpoint.net:8080 (HTTP — certutil payload download)
+- Exfil Destination: rclone → Mega cloud storage (mega.nz), 66.203.125.15:443
 - Exfil Account: jwilson.vhr@proton.me
-- Staging IP: 10.1.57.66 (server)
-- DC IP: 10.1.100.76
+- Internal Staging Host: 10.1.57.66 (server)
+- Domain Controller: 10.1.100.76
 
 **Registry Modifications:**
 - HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU — suspicious entries
@@ -140,7 +148,7 @@ The Domain Controller compromise began at 10:37 PM with the same remote executio
 - Domain Admin Enumeration: net group "Domain Admins" /domain queries
 
 **Service Creation Indicators:**
-- Random service names: pGJLIKnC, MzLbIBFm, QjhJMWqS
+- Random service names: pGJLIKnC, MzLblBFm, QjhJMWqS
 - Service executable paths: C:\Windows\Temp\*.bat files
 - Service execution parent: services.exe
 
@@ -196,7 +204,7 @@ EmberForgeX_CL
 | where CommandLine_s has_any ("rclone", "aws", "gsutil", "az storage", "mega", "dropbox", "curl", "gamedev.zip")
 ```
  
-Multiple rclone commands fired on the server at 10:38:53 AM. The configuration revealed the cloud destination and account:
+Multiple rclone commands fired on the server starting at 10:38:23 PM. The configuration revealed the cloud destination and account:
  
 <img width="1701" height="60" alt="image" src="https://github.com/user-attachments/assets/36eb2e74-9495-46da-a275-ec5423308cf8" />
 <br>
@@ -410,7 +418,7 @@ EmberForgeX_CL
 | take 20
 ```
 
-At 10:43:35 PM on the workstation (B9GHH06):
+At 10:43:35 PM on the workstation (B9GHHO6):
 
 <img width="958" height="57" alt="image" src="https://github.com/user-attachments/assets/e1c73eba-3ed3-41ff-9f49-e4df5f4700b4" />
 <br>
@@ -457,7 +465,7 @@ EmberForgeX_CL
 | project TimeGenerated, User_s, Caller_User_Name_s, Computer
 ```
 
-The User_s field returned `lmartin` — Lisa Martin's domain account. Patient zero confirmed.
+The User_s field returned `EMBERFORGE\lmartin` — Lisa Martin's domain account. Patient zero confirmed. (The flag accepts the bare account name `lmartin`, without the domain prefix.)
 <br>
 
 <img width="862" height="64" alt="image" src="https://github.com/user-attachments/assets/c3f04998-b32c-458c-b22a-1a0546814d92" />
@@ -509,7 +517,7 @@ The ParentImage_s field returned `C:\Windows\explorer.exe` — Lisa double-click
 EmberForgeX_CL
 | where TimeGenerated >= datetime(2026-02-10)
 | where TimeGenerated <= datetime(2026-02-11)
-| where Computer has "B9GHH06"
+| where Computer has "B9GHHO6"
 | where CommandLine_s has_any ("extract", "expand", "7z", "winrar", "tar", "Expand-Archive")
 | project TimeGenerated, Image_s, CommandLine_s
 | order by TimeGenerated asc
@@ -583,7 +591,7 @@ EmberForgeX_CL
 <img width="650" height="40" alt="image" src="https://github.com/user-attachments/assets/a0043213-9050-4912-bfc2-67018d23b2c7" />
 <br>
 
-One result: `C:\Users\Public\update.exe` created at 10:43:13 PM — 22 seconds before the rundll32 execution at 10:43:35 PM. The DLL dropped the next stage tool before being invoked.
+One result: `C:\Users\Public\update.exe` created at 10:43:13 PM — TimeGenerated for this file-create event lands 22 seconds *earlier* than the rundll32 → review.dll TimeGenerated at 10:43:35 PM. This is a Sentinel ingestion-ordering artifact (events are batched per-source); inside the Sysmon `Raw_s` SystemTime, review.dll's load actually precedes update.exe being staged. The DLL drops the next-stage tool, which then runs.
 
 **Flag:** `C:\Users\Public\update.exe`
 
@@ -654,7 +662,7 @@ EmberForgeX_CL
 | order by TimeGenerated asc
 ```
 
-The first row on the workstation at 10:43:22 PM showed rundll32.exe injecting into notepad.exe — 13 seconds after the DLL loaded. The malicious DLL used rundll32 as the injection source and notepad as the cover process.
+The chronologically-first EventID 8 row on the workstation (`EC2AMAZ-B9GHHO6`) is actually `update.exe → spoolsv.exe` at 10:42:29 PM (the SYSTEM-privilege injection used in Q21); the row of interest for this question is `rundll32.exe → notepad.exe` at 10:43:22 PM, the cover-process injection performed by review.dll. As with Q15, the relative TimeGenerated values here are an ingestion artifact — SystemTime ordering inside Raw_s places review.dll's load first, with the notepad injection ~13 seconds later. The malicious DLL used rundll32 as the injection source and notepad as the cover process.
 <br>
 
 <img width="868" height="34" alt="image" src="https://github.com/user-attachments/assets/294cb97e-7329-434f-b23d-56648f1adb2a" />
@@ -1077,7 +1085,7 @@ EmberForgeX_CL
 <img width="546" height="396" alt="image" src="https://github.com/user-attachments/assets/f5b63b57-544e-4dc3-a25d-19b30aaa20b2" />
 <br>
 
-Multiple random service names came back across the server and DC. Three were visible on the server: `pGJLIKnC`, `QjhJMWqS`, and `MzLbIBFm`. All three were submitted and rejected — the font was rendering uppercase I and uppercase L identically, making it impossible to distinguish by eye.
+Multiple random service names came back across the server and DC. Three were visible on the server: `pGJLIKnC`, `QjhJMWqS`, and `MzLblBFm`. All three were submitted and rejected on the first attempts — the font was rendering uppercase I and lowercase L identically, making it impossible to distinguish by eye.
 
 **Failed Submissions:**
 - `MzLbIBFm` — Rejected
@@ -1239,7 +1247,7 @@ The password `P@ssw0rd123!` was passed directly as a command line argument — f
 
 **Goal:** Identify the group the backdoor account was added to for elevated privileges.
 
-**Approach:** Creating a domain account isn't enough — it has to be elevated to be useful. From Q36/Q37, `svc_backup` was created at 23:38:11 on the DC. The next attacker action should be a `net group` add targeting a privileged group. Pivoted on the account name and the keyword `group` to surface the elevation command.
+**Approach:** Creating a domain account isn't enough — it has to be elevated to be useful. From Q36/Q37, `svc_backup` was created on the DC as part of the credential-extraction burst. The expected attacker action is a `net group` add targeting a privileged group. Pivoted on the account name and the keyword `group` to surface the elevation command.
 
 ```kql
 EmberForgeX_CL
@@ -1256,7 +1264,7 @@ EmberForgeX_CL
 <br>
 
 
-The DC returned the command seconds after the account creation:
+The DC returned the elevation command in the same ~6-second burst as the user creation (TimeGenerated 22:37:02 for the group add, 22:37:08 for the user add — note the group-add lands first in the TimeGenerated stream as an ingestion artifact):
 
 ```
 net group "Domain Admins" svc_backup /add /domain
