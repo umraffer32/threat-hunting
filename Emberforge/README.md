@@ -1307,6 +1307,9 @@ The mapping authenticated as `EMBERFORGE\Administrator` against the workstation'
 </details>
 
 <details>
+ 
+## 🛡️ Phase 9: Can they come back?
+
 <summary>Q40 — Scheduled Task</summary>
 
 **Goal:** Identify the name of the scheduled task the attacker created for persistence across reboots.
@@ -1377,3 +1380,99 @@ The `--silent` flag suppresses installer UI, `--start-with-win` registers boot p
 
 </details>
 
+<details>
+<summary>Q42 — Remote Access Configuration</summary>
+
+**Goal:** Identify the full path to the AnyDesk configuration file the attacker read and modified.
+
+**Approach:** Installing AnyDesk silently isn't sufficient for unattended access — the attacker must also write an unattended-access password hash into the config and enable interactive access. Those writes go straight to the AnyDesk system config file. Searched for AnyDesk command lines referencing a `.conf` file.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "AnyDesk"
+| where CommandLine_s has ".conf"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="1072" height="407" alt="image" src="https://github.com/user-attachments/assets/5bc5e080-a8c6-4939-851d-29307cd12037" />
+<br>
+
+
+The full read-then-modify sequence appeared across both hosts:
+
+```
+cmd.exe /c type C:\ProgramData\AnyDesk\system.conf
+cmd.exe /c "echo ad.security.interactive_access=2 >> C:\ProgramData\AnyDesk\system.conf"
+cmd.exe /c "echo ad.security.unattended_access_password_hash=5e884898da28047d91089d3f7c6e12d05d0fb9e2 >> C:\ProgramData\AnyDesk\system.conf"
+```
+
+The attacker first read the file to confirm the install layout, then appended two settings: `interactive_access=2` (allow inbound sessions without local prompt) and a SHA-1 password hash for unattended access. The hash `5e88...b9e2` is the known SHA-1 of the string `password` — a default-credential placeholder, likely standing in for whatever the attacker actually uses operationally.
+
+**Flag:** `C:\ProgramData\AnyDesk\system.conf`
+
+> **Lesson:** AnyDesk's `system.conf` is the highest-value persistence artifact in any AnyDesk-based compromise. Two settings flip the tool from interactive helper to silent backdoor: `interactive_access` (controls whether sessions need local approval) and `unattended_access_password_hash` (lets a remote attacker authenticate without any user present). Defenders monitoring for RMM abuse should alert on any write to `system.conf` outside of the AnyDesk installer's own process — appending via `cmd.exe echo` is the unambiguous tell. File integrity monitoring on `C:\ProgramData\AnyDesk\` and `C:\ProgramData\TeamViewer\` catches this entire class of attack.
+
+</details>
+
+## 🧹 Phase 10: What did they hide?
+
+<details>
+<summary>Q43 — Anti-Forensics Tool</summary>
+
+**Goal:** Identify the built-in Windows utility the attacker used to clear event logs on the Domain Controller.
+
+**Approach:** After persistence was in place, the final stage of the operation was destroying the evidence trail. Windows ships with exactly one native binary for clearing event logs — `wevtutil`. Filtered the DC's command lines for it directly.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Computer has "EEU3IA2"
+| where CommandLine_s has "wevtutil"
+| project TimeGenerated, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="856" height="447" alt="image" src="https://github.com/user-attachments/assets/a20edd9b-7adc-46ac-8eef-50bddde06d62" />
+<br>
+
+
+Multiple invocations fired in sequence on the DC:
+
+```
+wevtutil cl Security
+wevtutil cl System
+```
+
+The `cl` subcommand stands for "clear log" — it wipes every record in the named channel. Both critical channels were targeted: `Security` (logons, account changes, privilege use, audit policy) and `System` (service installs, driver loads, scheduled task events). The wrapper pattern (`cmd /c ... > \Windows\Temp\<rand> 2>&1`) matches every other smbexec-style remote execution on the DC.
+
+**Flag:** `wevtutil`
+
+> **Lesson:** `wevtutil cl <Channel>` generates exactly one piece of evidence that survives the wipe — EventID 1102 (Audit Log Cleared) in the Security channel. That single event is irrefutable proof of anti-forensics activity, even though everything before it is gone. Defenders should treat EventID 1102 as a top-priority alert: it almost never appears in normal operations, and when it does, it is one of the strongest indicators of late-stage attacker activity. Forwarding event logs in real time to a SIEM (as this hunt's `EmberForgeX_CL` table demonstrates) is the structural defense — once logs are forwarded, clearing them locally has no effect on what the hunter can see.
+
+</details>
+
+<details>
+<summary>Q44 — Cleared Logs</summary>
+
+**Goal:** Identify the two event log channels the attacker cleared on the Domain Controller.
+
+**Approach:** No additional query needed. The Q43 results already enumerated the full set of `wevtutil cl` invocations on the DC. The argument to `cl` is the channel name — each command names exactly one log.
+
+From the Q43 results:
+
+```
+wevtutil cl Security    (22:36:20, 22:36:25)
+wevtutil cl System      (22:36:23)
+```
+
+Two channels targeted, in this order: `Security` first, then `System`. The order matters — clearing Security first removes the audit trail of the elevation and account-creation activity from Q36–Q38, then clearing System removes the service-install records that prove smbexec-style remote execution from Q32.
+
+**Flag:** `Security,System`
+
+> **Lesson:** Attackers rarely clear all available channels — they target the two that hurt them the most. `Security` holds account logons (4624/4625), account creation (4720), group changes (4728), and privilege use (4672). `System` holds service installations (7045), which expose every PsExec/Impacket-style lateral movement. Clearing both wipes the bulk of the attack story from the DC. Other channels like `Application`, `Setup`, and the Sysmon channel (`Microsoft-Windows-Sysmon/Operational`) are often left untouched — because attackers either don't know about them or forget them under time pressure. In this hunt, the Sysmon-forwarded telemetry in `EmberForgeX_CL` survived intact, which is precisely why the entire attack chain was reconstructable. Forwarding logs off-host in real time, plus dedicated hunting on Sysmon, defeats this anti-forensics technique by design.
+
+</details>
