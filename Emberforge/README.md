@@ -1306,9 +1306,10 @@ The mapping authenticated as `EMBERFORGE\Administrator` against the workstation'
 
 </details>
 
+## 🛡️ Phase 9: Can they come back?
 <details>
  
-## 🛡️ Phase 9: Can they come back?
+
 
 <summary>Q40 — Scheduled Task</summary>
 
