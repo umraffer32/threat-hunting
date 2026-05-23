@@ -1234,3 +1234,146 @@ The password `P@ssw0rd123!` was passed directly as a command line argument — f
 
 </details>
 
+<details>
+<summary>Q38 — Privilege Assignment</summary>
+
+**Goal:** Identify the group the backdoor account was added to for elevated privileges.
+
+**Approach:** Creating a domain account isn't enough — it has to be elevated to be useful. From Q36/Q37, `svc_backup` was created at 23:38:11 on the DC. The next attacker action should be a `net group` add targeting a privileged group. Pivoted on the account name and the keyword `group` to surface the elevation command.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Computer has "EEU3IA2"
+| where CommandLine_s has "svc_backup"
+| where CommandLine_s has "group"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="1234" height="276" alt="image" src="https://github.com/user-attachments/assets/dc8fab92-68b3-4fda-9ff2-ed830242bcca" />
+<br>
+
+
+The DC returned the command seconds after the account creation:
+
+```
+net group "Domain Admins" svc_backup /add /domain
+```
+
+Same wrapper pattern as every other smbexec-style execution on the DC — a `cmd /Q /c` shell redirecting output to `\Windows\Temp\rIuiTKWl`, with the `net1` child carrying the actual operation. The target group is the highest-privilege group in Active Directory.
+
+**Flag:** `Domain Admins`
+
+> **Lesson:** Account creation and group elevation are a two-command pair in nearly every domain-compromise playbook. `net user … /add /domain` makes the account exist; `net group "Domain Admins" … /add /domain` makes it dangerous. Detection should treat the pair as a single event — alerting on either one in isolation misses the intent, but the pair together inside a short window (here, ~86 seconds) is a high-fidelity persistence signature. Auditing membership changes to Domain Admins, Enterprise Admins, and Schema Admins via EventID 4728 is the corresponding defensive control on the DC side.
+
+</details>
+
+<details>
+<summary>Q39 — Exposed Credential</summary>
+
+**Goal:** Identify the plaintext password exposed when the attacker mapped a network drive on the Domain Controller.
+
+**Approach:** With SYSTEM access on the DC and the tool-staging share already created back on the workstation (Q27), the attacker needed to reach back and mount it. `net use` with explicit credentials passes the password as the final positional argument — visible verbatim in Sysmon EventID 1. Filtered the DC's command lines for `net use`.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where Computer has "EEU3IA2"
+| where CommandLine_s has "net use"
+| project TimeGenerated, CommandLine_s
+| order by TimeGenerated asc
+```
+
+
+<img width="1201" height="163" alt="image" src="https://github.com/user-attachments/assets/c3702be4-4acb-41b3-8aaa-58c7521645d3" />
+<br>
+
+
+The DC ran a `net use Z: /delete` cleanup first, then mapped the drive:
+
+```
+net use Z: \\10.1.173.145\tools /user:EMBERFORGE\Administrator EmberForge2024!
+```
+
+The mapping authenticated as `EMBERFORGE\Administrator` against the workstation's `tools` share — the same share created in Q27 (`net share tools=C:\Users\Public /grant:everyone,full`). The password sits as the last positional token, fully logged.
+
+**Flag:** `EmberForge2024!`
+
+> **Lesson:** `net use` with credentials inline is one of the loudest credential-exposure patterns in Windows. The syntax requires the password as a positional argument, which means every drive mapping done this way leaks the credential into process creation logs. Attackers do it anyway because the alternative — interactive prompts — doesn't work in a non-interactive remote execution context. Defenders should treat every `net use` command with `/user:` in the argument list as a credential-disclosure event and flag the password for rotation, even if the operation itself looks benign.
+
+</details>
+
+<details>
+<summary>Q40 — Scheduled Task</summary>
+
+**Goal:** Identify the name of the scheduled task the attacker created for persistence across reboots.
+
+**Approach:** Scheduled tasks are one of the most durable persistence mechanisms on Windows — they survive reboots, password resets, and most account remediation. The `schtasks /create` command exposes the task name (`/tn`), trigger binary (`/tr`), schedule (`/sc`), and run-as context (`/ru`) all on the command line. Filtered for any `schtasks /create` across the investigation window.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has "schtasks"
+| where CommandLine_s has "/create"
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+```
+
+<img width="1490" height="370" alt="image" src="https://github.com/user-attachments/assets/0e62b3b4-fb6a-40c4-b582-ed9eb2bf6932" />
+<br>
+
+
+Multiple identical creations fired on both the DC and the workstation:
+
+```
+schtasks /create /tn "WindowsUpdate" /tr "C:\Users\Public\update.exe" /sc onstart /ru system
+```
+
+Task name: `WindowsUpdate` — chosen to blend with the legitimate Windows Update service. Trigger: `onstart`, meaning the payload re-launches on every boot. Context: `system`, granting SYSTEM-level execution without needing any user to log in. A second variant on the workstation used `/sc onlogon` as a redundant trigger.
+
+**Flag:** `WindowsUpdate`
+
+> **Lesson:** Scheduled task names that mimic Windows system services (`WindowsUpdate`, `GoogleUpdate`, `Adobe Update`, `OneDrive Sync`) are deliberately camouflaged. Defenders auditing scheduled tasks should compare task names against a known-good baseline rather than relying on the name itself to signal intent — the legitimate Windows Update service does not register a task literally named `WindowsUpdate`. The combination of `/sc onstart` and `/ru system` is the high-fidelity signature: a task that runs as SYSTEM at boot, created outside the normal MSI installation flow, is almost always malicious. EventID 4698 (Scheduled Task Created) on the DC provides the corresponding security-log audit trail.
+
+</details>
+
+<details>
+<summary>Q41 — Remote Access Tool</summary>
+
+**Goal:** Identify the legitimate remote management tool the attacker silently installed for unattended access.
+
+**Approach:** Beyond scheduled tasks and backdoor accounts, attackers often install a commercial RMM tool as a redundant persistence layer. These tools blend with legitimate IT infrastructure and are difficult to detect by signature alone. Searched command lines for common RMM binaries.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10)
+| where TimeGenerated <= datetime(2026-02-11)
+| where CommandLine_s has_any ("anydesk", "teamviewer", "screenconnect", "atera", "ngrok")
+| project TimeGenerated, Computer, CommandLine_s
+| order by TimeGenerated asc
+| take 10
+```
+
+<img width="1072" height="407" alt="image" src="https://github.com/user-attachments/assets/d02d346e-a704-4cdd-8f11-52da78d30980" />
+<br>
+
+
+The server showed the full AnyDesk staging sequence at 22:38:
+
+```
+C:\Users\Public\AnyDesk.exe --install C:\ProgramData\AnyDesk --start-with-win --silent
+"C:\ProgramData\AnyDesk\AnyDesk.exe" --service
+```
+
+The `--silent` flag suppresses installer UI, `--start-with-win` registers boot persistence, and `--service` runs the installed binary as a SYSTEM service. Combined with the certutil download in Q31 (`AnyDesk.exe` pulled from `sync.cloud-endpoint.net:8080`), this is the complete RMM persistence chain.
+
+**Flag:** `AnyDesk`
+
+> **Lesson:** Commercial RMM tools (AnyDesk, TeamViewer, ScreenConnect, Atera) are increasingly common in attacker persistence playbooks because they are legitimately signed, AV-clean, and provide full remote control without needing custom C2 infrastructure. Defenders should maintain an allowlist of approved RMM tools and alert on any installation outside that list — the `--silent --start-with-win` flag combination is itself a high-fidelity signal that someone installed remote access without an interactive admin session. This pattern is documented in CISA advisory AA23-025A on the malicious use of RMM software.
+
+</details>
+
