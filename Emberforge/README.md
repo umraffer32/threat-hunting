@@ -1152,3 +1152,85 @@ The raw XML showed `AuthenticationPackageName'>NTLM` with the source IP confirme
 
 </details>
 
+## 🛡️ Phase 8: Did they own the domain?
+
+<details>
+<summary>Q35 — DC Arrival and Credential Extraction</summary>
+
+**Goal:** Identify the first discovery command run on the DC and the tool used to extract the NTDS database.
+
+**Approach:** Same remote execution pattern used on the server was deployed on the DC. Searched for process creation events on the DC in the 10:37 PM window, filtering out staging and service noise.
+
+```kql
+EmberForgeX_CL
+| where TimeGenerated >= datetime(2026-02-10T22:37:00)
+| where TimeGenerated <= datetime(2026-02-10T22:38:00)
+| where Computer has "EEU3IA2"
+| where EventID_s == 1
+| where CommandLine_s !has "splunk" and CommandLine_s !has ".bat" and CommandLine_s !has "services.exe"
+| project TimeGenerated, CommandLine_s, ParentImage_s
+| order by TimeGenerated asc
+| take 15
+```
+
+<img width="1550" height="403" alt="image" src="https://github.com/user-attachments/assets/a12015c7-5238-43d4-9789-ee713fd94794" />
+<br>
+
+
+Results showed the ntds.dit extraction at 10:37:17 PM:
+
+```
+copy \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1\Windows\NTDS\ntds.dit C:\Windows\Temp\nyMdRNSp.tmp
+```
+
+Widened the window earlier to confirm whoami ran first before vssadmin. The question format asked for `first_command > extraction_tool`.
+
+**Flag:** `whoami > vssadmin.exe`
+
+> **Lesson:** The DC attack followed the exact same playbook as the server — remote service execution, whoami to confirm context, then immediate credential extraction. On a Domain Controller, ntds.dit is the ultimate objective. The VSS shadow copy technique (vssadmin create shadow /For=C:) bypasses the OS file lock on ntds.dit, and the subsequent copy pulls the database to a staging path. The entire extraction sequence takes under 30 seconds once the attacker has SYSTEM access on the DC.
+
+</details>
+
+<details>
+<summary>Q36 — Backdoor Account</summary>
+
+**Goal:** Identify the backdoor account created on the Domain Controller for persistent access.
+
+**Approach:** No additional query needed. The Q35 results already showed the full command sequence on the DC. Alongside the ntds.dit extraction, the attacker created a new domain user and added it to Domain Admins.
+
+From the Q35 query results:
+
+```
+net user svc_backup P@ssw0rd123! /add /domain
+net group "Domain Admins" svc_backup /add /domain
+```
+
+The account name `svc_backup` was chosen to blend in — service account naming conventions (svc_ prefix) are common in enterprise environments and often overlooked in user audits.
+
+**Flag:** `svc_backup`
+
+> **Lesson:** Backdoor accounts created with service-account naming conventions (svc_, _svc, admin_, _admin) are deliberately camouflaged to avoid standing out in user listings. Post-incident remediation must include a full audit of domain accounts created during the attack window — not just the accounts that appear obviously malicious. Any account added to Domain Admins outside of a change management window is a critical finding regardless of how benign the name looks.
+
+</details>
+
+<details>
+<summary>Q37 — Backdoor Credentials</summary>
+
+**Goal:** Identify the password set for the backdoor domain account.
+
+**Approach:** No additional query needed. The password was visible in plaintext in the Q35 results alongside the account creation command.
+
+From the Q35 query results:
+
+```
+net user svc_backup P@ssw0rd123! /add /domain
+```
+
+The password `P@ssw0rd123!` was passed directly as a command line argument — fully visible in the Sysmon EventID 1 process creation log.
+
+**Flag:** `P@ssw0rd123!`
+
+> **Lesson:** Plaintext credentials in command line arguments are one of the most valuable artifacts in a threat hunt. The attacker traded operational security for speed — typing the password inline is faster than scripting a secure credential store. This single command line exposed the account name, password, and domain membership in one shot. All three are IOCs: the account must be disabled and deleted, the password added to a breach list, and the Domain Admins group audited for any other unauthorized additions.
+
+</details>
+
