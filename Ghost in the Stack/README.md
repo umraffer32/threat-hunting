@@ -1,6 +1,9 @@
-> **CONFIDENTIAL — THREAT HUNT REPORT**
 
 # Ghost in the Stack
+
+<img width="1004" height="215" alt="image" src="https://github.com/user-attachments/assets/20b72457-2fcc-4b6b-a6a1-5789f59eab2b" />
+<br>
+
 
 | Field | Detail |
 |---|---|
