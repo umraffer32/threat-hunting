@@ -1,18 +1,8 @@
 
 # Ghost in the Stack
 
-<img width="1004" height="215" alt="image" src="https://github.com/user-attachments/assets/20b72457-2fcc-4b6b-a6a1-5789f59eab2b" />
+<img width="1400" height="321" alt="image" src="https://github.com/user-attachments/assets/e68ffbe5-e7da-4f04-b729-7058bf343e79" />
 <br>
-
-
-| Field | Detail |
-|---|---|
-| **Analyst** | umraffer32 |
-| **Organisation** | Greenfield Technologies // Engineering Segment |
-| **Date** | 23 May 2026 |
-| **Hunt Type** | Proactive / CTF (LIVEHunt 05) |
-| **Threat Actor** | Octo Tempest |
-| **Status** | COMPLETE — 41 / 41 flags confirmed (Q00–Q41; Q35 not issued by platform) |
 
 ---
 
